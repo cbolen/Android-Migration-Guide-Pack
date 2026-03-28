@@ -30,10 +30,9 @@ The **majority of changes are standard Android API migrations** — the same upd
 
 ### Zebra SDK Guidance
 
-**Barcode / RFID Scanning**
-- Use **DataWedge** or **EMDK** for barcode and RFID scanning on Zebra devices
-- DataWedge is preferred for new development — scan data arrives via broadcast intent, MDM-configurable without app changes
-- EMDK is appropriate for direct scanner control (custom decode params, serial/USB, payment hardware)
+**Barcode Scanning**
+- Use **DataWedge** for all barcode scanning on Zebra devices — scan data arrives via broadcast intent, MDM-configurable without app changes
+- **EMDK** only when direct scanner control is required (custom decode params, serial/USB, payment hardware)
 
 DataWedge intent pattern:
 ```kotlin
@@ -53,8 +52,9 @@ fun sendDataWedgeCommand(context: Context, key: String, value: String) {
 ```
 
 **Zebra AI Suite (Android 14+ only)**
+- Use for advanced data capture: AI barcode recognition, OCR, shelf analysis
+- Recommended over DataWedge when AI-based recognition is needed — use alongside DataWedge for standard scanning
 - Only relevant for apps targeting Android 14 (API 34) and above
-- Provides AI-based recognition (barcode, OCR, shelf) — supplements DataWedge, not a replacement
 
 ### Storage Rules
 - `getExternalFilesDir()` — app-specific files, no permission needed

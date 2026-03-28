@@ -40,14 +40,16 @@ Guidance and context files to help developers port Android apps to Android 11–
 This guide covers migration from **Android 11 (API 30) to Android 15 (API 35)**.
 
 Primary SDKs covered:
-- **DataWedge** — barcode/RFID via intents (primary scanning integration)
-- **EMDK** — direct hardware APIs
+- **DataWedge** — recommended for all barcode scanning (intent-based, no scanner code in app)
+- **Zebra AI Suite** — A14+ only, advanced data capture (AI barcode, OCR, shelf recognition)
+- **EMDK** — direct hardware APIs for specialized scanner control
 - **Android Jetpack** — compatibility libraries
-- **Zebra AI Suite** — A14+ only, AI-based recognition scenarios
 
 ## Notes
 
-- DataWedge is the recommended scanning integration for all new development — do not use Camera2/CameraX/ZXing for barcode scanning on Zebra devices
+- DataWedge is the recommended scanning integration for all new development
+- Use Zebra AI Suite (A14+) for advanced data capture scenarios — AI barcode recognition, OCR, shelf analysis
+- EMDK is appropriate only when direct scanner control is required (custom decode params, serial/USB, payment hardware)
 - Zebra AI Suite was released with Android 14 — only relevant for A14+ scenarios
 - SSM (Secure Storage Manager) is not required for standard A11+ storage patterns; see `docs/migration-guide.md` for when it applies
 

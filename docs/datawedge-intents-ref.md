@@ -1,6 +1,6 @@
 # DataWedge Intent API — Quick Reference
 
-DataWedge is the primary barcode/RFID integration for Zebra devices. Scan data is delivered to your app via broadcast intents — no camera or scanning code required in your app.
+DataWedge is the primary barcode scanning integration for Zebra devices. Scan data is delivered to your app via broadcast intents — no scanner code required in your app.
 
 Full documentation: https://techdocs.zebra.com/datawedge/latest/guide/api/
 
