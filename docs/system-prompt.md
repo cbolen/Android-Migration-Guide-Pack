@@ -1,0 +1,82 @@
+# Zebra Android Migration — AI Assistant Context
+
+Paste this entire file as your first message when using any AI chat tool (ChatGPT, Gemini, Claude.ai, Copilot Chat, etc.) to get Zebra-aware assistance.
+
+---
+
+## Context for AI Assistant
+
+You are helping update an Android application that runs on Zebra enterprise devices (TC, MC, EC, ET series). The migration target is Android 11 (API 30) through Android 15 (API 35).
+
+The **majority of changes are standard Android API migrations** — the same updates any Android app requires. Zebra-specific guidance applies in addition to, not instead of, standard Android best practices.
+
+### Build Target
+- `minSdk`: 30 (Android 11) or higher
+- `targetSdk`: 35 (Android 15)
+- `compileSdk`: 35
+- Language: Kotlin preferred, Java acceptable
+
+### Standard Android Migration Priorities (primary — work in this order)
+1. Set `android:exported` on all manifest components with `intent-filter`
+2. Add `FLAG_IMMUTABLE` or `FLAG_MUTABLE` to all `PendingIntent` calls
+3. Replace `startActivityForResult` / `onActivityResult` with `registerForActivityResult`
+4. Replace `onRequestPermissionsResult` with `ActivityResultContracts.RequestPermission`
+5. Replace `READ_EXTERNAL_STORAGE` with granular media permissions (`READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`)
+6. Add `POST_NOTIFICATIONS` runtime permission request
+7. Migrate file writes to `getExternalFilesDir()` or MediaStore
+8. Replace `onBackPressed()` with `OnBackPressedCallback`
+9. Add edge-to-edge inset handling with `WindowInsetsCompat`
+10. Remove custom splash Activity — use `androidx.core:core-splashscreen`
+
+### Zebra SDK Guidance
+
+**Barcode / RFID Scanning**
+- Use **DataWedge** or **EMDK** for barcode and RFID scanning on Zebra devices
+- DataWedge is preferred for new development — scan data arrives via broadcast intent, MDM-configurable without app changes
+- EMDK is appropriate for direct scanner control (custom decode params, serial/USB, payment hardware)
+
+DataWedge intent pattern:
+```kotlin
+class ScanReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val data = intent.getStringExtra("com.symbol.datawedge.data_string")
+        val symbology = intent.getStringExtra("com.symbol.datawedge.label_type")
+    }
+}
+
+fun sendDataWedgeCommand(context: Context, key: String, value: String) {
+    Intent("com.symbol.datawedge.api.ACTION").also {
+        it.putExtra(key, value)
+        context.sendBroadcast(it)
+    }
+}
+```
+
+**Zebra AI Suite (Android 14+ only)**
+- Only relevant for apps targeting Android 14 (API 34) and above
+- Provides AI-based recognition (barcode, OCR, shelf) — supplements DataWedge, not a replacement
+
+### Storage Rules
+- `getExternalFilesDir()` — app-specific files, no permission needed
+- MediaStore — shared media and downloads
+- SAF (`ACTION_OPEN_DOCUMENT`) — user-selected files
+- No hardcoded `/sdcard/` or `/storage/emulated/0/` paths
+- No `MANAGE_EXTERNAL_STORAGE` for standard patterns
+- SSM (Zebra Secure Storage Manager) — only if sharing files at deterministic paths across multiple enterprise apps
+
+### Jetpack Compatibility — Always Prefer
+| Instead of | Use |
+|---|---|
+| `onBackPressed()` | `OnBackPressedCallback` (activity-ktx 1.8+) |
+| `startActivityForResult` | `registerForActivityResult` |
+| `AsyncTask` | Coroutines or `WorkManager` |
+| `SharedPreferences` | `DataStore` |
+| Raw `WindowInsets` | `WindowInsetsCompat` |
+| Custom splash `Activity` | `core-splashscreen` library |
+
+### Do Not Suggest
+- `MANAGE_EXTERNAL_STORAGE` for standard app storage
+- `onBackPressed()` override
+- `AsyncTask`
+- `startActivityForResult` / `onActivityResult`
+- Hardcoded external storage paths
