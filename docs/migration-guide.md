@@ -238,6 +238,61 @@ Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
 
 **Predictive back gesture enforced** — no longer opt-in. Ensure `OnBackPressedCallback` is used everywhere (see API 33 section above).
 
+**Notification cooldown**
+- If an app posts notifications too rapidly, the system automatically reduces their priority temporarily
+- No API change required, but scan-heavy apps that fire a notification per barcode decode may see alerts silently downgraded
+- Prefer updating a single persistent notification rather than posting a new one for each scan
+
+**Background activity launch restrictions tightened**
+- Apps can no longer start activities from the background without a visible notification or an active user-initiated task stack
+- Affects workflow apps that launch screens from a `Service`, `BroadcastReceiver`, or `WorkManager` task
+- If you need to surface UI from a background context, show a full-screen notification intent instead:
+```kotlin
+val fullScreenIntent = PendingIntent.getActivity(
+    context, 0, Intent(context, AlertActivity::class.java), PendingIntent.FLAG_IMMUTABLE
+)
+val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+    .setFullScreenIntent(fullScreenIntent, true)
+    .build()
+```
+
+**Private Space (behavioral — enterprise note)**
+- Android 15 introduces Private Space, a secondary locked profile for sensitive personal apps
+- For enterprise Zebra deployments, MDM can disable Private Space via policy — it is unlikely to be present on managed dedicated-use devices
+- If your app could be installed into Private Space: it runs as an isolated profile, so DataWedge profile association must match the app's package name in that profile context
+
+**Safer intents**
+- Intents targeting a specific component must accurately match that component's `intent-filter` — action, category, and data must align
+- Intents with no action no longer match any intent filter
+- Audit any implicit intents used for internal app routing — convert to explicit intents where possible:
+```kotlin
+// Prefer explicit over implicit for internal components
+val intent = Intent(context, ScanResultActivity::class.java)
+context.startActivity(intent)
+```
+- DataWedge broadcast intents sent via `com.symbol.datawedge.api.ACTION` are explicit and unaffected — no change needed there
+
+**TLS 1.0 and 1.1 restricted**
+- Apps targeting Android 15 can no longer connect to servers using TLS 1.0 or 1.1 — connections will fail
+- Affects enterprise apps connecting to internal servers, on-premise APIs, or legacy corporate infrastructure
+- Verify all endpoints your app contacts support TLS 1.2 or higher; coordinate with IT/infrastructure teams if not
+
+**BOOT_COMPLETED foreground service restrictions**
+- Apps targeting Android 15 cannot launch certain foreground service types from a `BOOT_COMPLETED` receiver
+- Affected types include `dataSync`, `mediaProcessing`, and others — `location` and `connectedDevice` are exempt
+- If your app auto-starts a scanning or sync service on boot, use `WorkManager` with a `BOOT_COMPLETED` trigger instead:
+```kotlin
+// In your BroadcastReceiver
+WorkManager.getInstance(context).enqueue(
+    OneTimeWorkRequestBuilder<SyncWorker>().build()
+)
+```
+
+**`elegantTextHeight` defaults to true**
+- The `elegantTextHeight` attribute on `TextView` is now true by default for apps targeting Android 15
+- Replaces the compact font metric with a taller, more readable one — increases line height for scripts with large vertical metrics
+- Test all text-heavy screens, particularly on smaller Zebra displays (WS50/WS501) — rows and labels that were sized to compact font metrics may be clipped or overflow their containers
+
 **`WorkManager` / `JobScheduler` constraints tightened**
 - Jobs may be deferred more aggressively
 - Test background sync after device is idle 15+ minutes
