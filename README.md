@@ -53,7 +53,7 @@ Primary SDKs covered:
 
 ## Practice App
 
-**[android-migration-sample](https://github.com/zebra-oss/android-migration-sample)** — A legacy inventory app intentionally written with API 30 patterns (AsyncTask, startActivityForResult, hardcoded storage paths, missing exported flags, etc.). Use it as a safe sandbox to practice applying this guide with your AI tool of choice before touching production code.
+**[android-migration-sample](https://github.com/cbolen/android-migration-sample)** — A legacy inventory app intentionally written with API 30 patterns (AsyncTask, startActivityForResult, hardcoded storage paths, missing exported flags, etc.). Use it as a safe sandbox to practice applying this guide with your AI tool of choice before touching production code.
 
 ## Automating the Migration
 
