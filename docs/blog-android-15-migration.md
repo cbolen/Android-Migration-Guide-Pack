@@ -142,125 +142,9 @@ class BootReceiver : BroadcastReceiver() {
 
 ---
 
-## The Cumulative Changes from Android 12-14
-
-Android 15 does not arrive in isolation. Apps still targeting API 30 carry the full weight of four API level bumps. Here is what you are activating at each step.
-
-### Android 12 (API 31): Manifest, PendingIntent, and Cryptography
-
-**Every manifest component with an `<intent-filter>` must declare `android:exported`** — your app will fail to install without it.
-
-```xml
-<!-- Before — install fails on API 31+ -->
-<activity android:name=".ScanResultActivity">
-    <intent-filter>
-        <action android:name="android.intent.action.VIEW" />
-    </intent-filter>
-</activity>
-
-<!-- After -->
-<activity android:name=".ScanResultActivity" android:exported="false">
-    <intent-filter>
-        <action android:name="android.intent.action.VIEW" />
-    </intent-filter>
-</activity>
-```
-
-**All `PendingIntent` calls must declare a mutability flag** — without it, an exception is thrown at runtime.
-
-```kotlin
-// Before — throws on API 31+
-val pending = PendingIntent.getActivity(context, 0, intent, 0)
-
-// After
-val pending = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-```
-
-**BouncyCastle cryptographic implementations removed.** Calling `Cipher.getInstance(..., "BC")` throws `NoSuchProviderException` at runtime on API 31+. Use the default provider instead:
-
-```kotlin
-// Throws on API 31+
-val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding", "BC")
-
-// Correct — use the default provider (Conscrypt on Android)
-val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
-```
-
----
-
-### Android 13 (API 33): Notifications, Storage, AsyncTask, DataWedge, Task Manager
-
-**`POST_NOTIFICATIONS` is a runtime permission.** Any app that shows notifications must request it before calling `notify()`.
-
-```kotlin
-val launcher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-    if (!granted) { /* disable notification features or show rationale */ }
-}
-
-if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-    launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
-}
-```
-
-**`READ_EXTERNAL_STORAGE` is replaced by granular media permissions** — `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO`.
-
-**`AsyncTask` is removed.** Replace with coroutines:
-
-```kotlin
-// Before
-class FetchTask : AsyncTask<Void, Void, Result>() {
-    override fun doInBackground(vararg p: Void) = fetchData()
-    override fun onPostExecute(result: Result) { updateUI(result) }
-}
-
-// After
-viewModelScope.launch {
-    val result = withContext(Dispatchers.IO) { fetchData() }
-    updateUI(result)
-}
-```
-
-**DataWedge scan receivers need a new export flag on API 33+.** DataWedge broadcasts come from a system service — use `RECEIVER_NOT_EXPORTED`:
-
-```kotlin
-if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-    registerReceiver(scanReceiver, IntentFilter(SCAN_ACTION), RECEIVER_NOT_EXPORTED)
-} else {
-    registerReceiver(scanReceiver, IntentFilter(SCAN_ACTION))
-}
-```
-
-**Android 13 introduces a Task Manager** accessible from the notification drawer. Users can stop any foreground service with one tap — the app is force-stopped with no lifecycle callbacks. Design for clean resumption on next launch. On dedicated-use Zebra deployments, lock down the notification shade via MX UI Manager or EHS.
-
----
-
-### Android 14 (API 34): Foreground Services, Notifications, and AI Suite
-
-**Foreground service types are strictly enforced.** A foreground service without a declared type crashes at runtime:
-
-```xml
-<service
-    android:name=".SyncService"
-    android:foregroundServiceType="dataSync"
-    android:exported="false" />
-```
-
-**`USE_FULL_SCREEN_INTENT` is restricted to alarm and calling apps.** For enterprise alert scenarios, replace full-screen intents with high-priority `IMPORTANCE_HIGH` notification channels:
-
-```kotlin
-val nm = getSystemService(NotificationManager::class.java)
-if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE || nm.canUseFullScreenIntent()) {
-    // attach full-screen intent as before
-} else {
-    // use IMPORTANCE_HIGH channel for heads-up notification instead
-}
-```
-
-**Zebra AI Suite becomes available at API 34.** AI-based barcode recognition, OCR, and shelf analysis via `EntityTrackerAnalyzer` are available for apps targeting Android 14+. See the [Zebra AI Suite SDK docs](https://techdocs.zebra.com/ai-datacapture/latest/about/) for integration details.
-
----
-
 ## Barcode Scanning on Zebra Devices: Use DataWedge
+
+> **Migrating from an older targetSdk?** If your app is still targeting API 30, 31, or 33 you will also need to address the breaking changes introduced in those releases — `android:exported`, `PendingIntent` flags, `AsyncTask` removal, and more. See the [Addendum: Cumulative Changes from Android 12–14](#addendum-cumulative-changes-from-android-1214) at the end of this post for the full list with code examples.
 
 A note that applies across all Android versions: **DataWedge is the right choice for barcode scanning on Zebra mobile computers.** Scan data arrives via broadcast intent — there is no camera or scanner API code in your app. The scanning behaviour is fully configurable through DataWedge profiles, managed by MDM without app updates.
 
@@ -431,3 +315,121 @@ Before publishing to the Play Store or deploying via MDM:
 *Questions or corrections? Open an issue on the GitHub repo or reach out via [developer@zebra.com](mailto:developer@zebra.com).*
 
 *Happy coding.*
+
+---
+
+## Addendum: Cumulative Changes from Android 12–14
+
+Android 15 does not arrive in isolation. Apps still targeting API 30 carry the full weight of four API level bumps. Here is what you are activating at each step — with code examples for each breaking change.
+
+### Android 12 (API 31): Manifest, PendingIntent, and Cryptography
+
+**Every manifest component with an `<intent-filter>` must declare `android:exported`** — your app will fail to install without it.
+
+```xml
+<!-- Before — install fails on API 31+ -->
+<activity android:name=".ScanResultActivity">
+    <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+    </intent-filter>
+</activity>
+
+<!-- After -->
+<activity android:name=".ScanResultActivity" android:exported="false">
+    <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+    </intent-filter>
+</activity>
+```
+
+**All `PendingIntent` calls must declare a mutability flag** — without it, an exception is thrown at runtime.
+
+```kotlin
+// Before — throws on API 31+
+val pending = PendingIntent.getActivity(context, 0, intent, 0)
+
+// After
+val pending = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+```
+
+**BouncyCastle cryptographic implementations removed.** Calling `Cipher.getInstance(..., "BC")` throws `NoSuchProviderException` at runtime on API 31+. Use the default provider instead:
+
+```kotlin
+// Throws on API 31+
+val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding", "BC")
+
+// Correct — use the default provider (Conscrypt on Android)
+val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+```
+
+---
+
+### Android 13 (API 33): Notifications, Storage, AsyncTask, DataWedge, Task Manager
+
+**`POST_NOTIFICATIONS` is a runtime permission.** Any app that shows notifications must request it before calling `notify()`.
+
+```kotlin
+val launcher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    if (!granted) { /* disable notification features or show rationale */ }
+}
+
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+}
+```
+
+**`READ_EXTERNAL_STORAGE` is replaced by granular media permissions** — `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO`.
+
+**`AsyncTask` is removed.** Replace with coroutines:
+
+```kotlin
+// Before
+class FetchTask : AsyncTask<Void, Void, Result>() {
+    override fun doInBackground(vararg p: Void) = fetchData()
+    override fun onPostExecute(result: Result) { updateUI(result) }
+}
+
+// After
+viewModelScope.launch {
+    val result = withContext(Dispatchers.IO) { fetchData() }
+    updateUI(result)
+}
+```
+
+**DataWedge scan receivers need a new export flag on API 33+.** DataWedge broadcasts come from a system service — use `RECEIVER_NOT_EXPORTED`:
+
+```kotlin
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    registerReceiver(scanReceiver, IntentFilter(SCAN_ACTION), RECEIVER_NOT_EXPORTED)
+} else {
+    registerReceiver(scanReceiver, IntentFilter(SCAN_ACTION))
+}
+```
+
+**Android 13 introduces a Task Manager** accessible from the notification drawer. Users can stop any foreground service with one tap — the app is force-stopped with no lifecycle callbacks. Design for clean resumption on next launch. On dedicated-use Zebra deployments, lock down the notification shade via MX UI Manager or EHS.
+
+---
+
+### Android 14 (API 34): Foreground Services, Notifications, and AI Suite
+
+**Foreground service types are strictly enforced.** A foreground service without a declared type crashes at runtime:
+
+```xml
+<service
+    android:name=".SyncService"
+    android:foregroundServiceType="dataSync"
+    android:exported="false" />
+```
+
+**`USE_FULL_SCREEN_INTENT` is restricted to alarm and calling apps.** For enterprise alert scenarios, replace full-screen intents with high-priority `IMPORTANCE_HIGH` notification channels:
+
+```kotlin
+val nm = getSystemService(NotificationManager::class.java)
+if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE || nm.canUseFullScreenIntent()) {
+    // attach full-screen intent as before
+} else {
+    // use IMPORTANCE_HIGH channel for heads-up notification instead
+}
+```
+
+**Zebra AI Suite becomes available at API 34.** AI-based barcode recognition, OCR, and shelf analysis via `EntityTrackerAnalyzer` are available for apps targeting Android 14+. See the [Zebra AI Suite SDK docs](https://techdocs.zebra.com/ai-datacapture/latest/about/) for integration details.
