@@ -7,6 +7,46 @@ For apps using DataWedge, EMDK, or other Zebra enterprise SDKs.
 
 ---
 
+## Phase 0: AI-Assisted Discovery
+
+If you are using an AI coding assistant (Claude Code, Cursor, GitHub Copilot), run this prompt first. It produces a full migration plan with no code changes so you know the complete scope before automation begins.
+
+> **Claude Code / Cursor / Copilot**: these tools have direct access to your project files — "scan this project" reads every file automatically. No pasting required.
+>
+> **Chat tools (Claude.ai, ChatGPT, Gemini)**: paste `AndroidManifest.xml`, `build.gradle`, and your key source files into the conversation first, then replace "scan this project" with "review the files I have pasted above".
+
+```
+Read CLAUDE.md for Zebra platform rules and docs/migration/migration-guide.md for the
+full A11–A15 change reference.
+
+Then scan this entire Android project — AndroidManifest.xml, all Kotlin/Java source
+files, build.gradle / build.gradle.kts, and libs.versions.toml if present.
+
+Produce a migration plan with the following sections:
+
+1. BLOCKING ISSUES (causes install failure or runtime crash)
+   - List each issue, the file and line, the API level that breaks it, and the fix needed
+
+2. REQUIRED CHANGES (behaviour breaks silently or permission is denied)
+   - List each issue, the file and line, the API level that enforces it, and the fix needed
+
+3. ZEBRA-SPECIFIC ISSUES
+   - DataWedge receiver registration, EMDK lifecycle, storage patterns, AI Suite eligibility
+
+4. RECOMMENDED TESTS
+   - Per change area: what to test, on which API level, and what a pass looks like
+
+5. SUGGESTED PHASE ORDER
+   - Recommend which of the migration phases (1–12) in docs/how-to-use.md apply to this
+     project and in what order
+
+Do not make any changes. Output the plan only.
+```
+
+Review and confirm the plan before proceeding to Phase 1.
+
+---
+
 ## Phase 1: Assessment
 
 Before changing any code:

@@ -18,43 +18,31 @@ Or download the ZIP from the Releases page and unzip it.
 
 ## Step 2 — Add the Right File for Your AI Tool
 
-Each AI tool looks for context in a different place. Copy one file — you do not need all of them.
+How you set up context depends on whether your AI tool has direct access to your project files or only sees what you paste into the conversation.
 
-| AI Tool | File to copy | Where to put it in your project |
+### Tools with full project file access (Claude Code, Cursor, GitHub Copilot)
+
+These tools read your project directory directly. Drop the context file in the right place and the AI picks it up automatically — no pasting required. You can then use prompts like "scan this project" and the AI will read every file.
+
+| AI Tool | File to copy | Where to put it |
 |---|---|---|
-| **Claude Code** (CLI) | `CLAUDE.md` | Your Android project root |
+| **Claude Code** | `CLAUDE.md` | Your Android project root |
 | **Cursor** | `.cursorrules` | Your Android project root |
 | **GitHub Copilot** | `CLAUDE.md` content | `.github/copilot-instructions.md` |
-| **Claude.ai, ChatGPT, Gemini** | `docs/system-prompt.md` | Paste as your first message |
-
-### Claude Code
 
 ```bash
+# Claude Code
 cp android-migration-guide/CLAUDE.md /path/to/your/android/project/CLAUDE.md
-```
 
-Claude Code reads `CLAUDE.md` automatically when you start a session in that directory. No other setup required.
-
-### Cursor
-
-```bash
+# Cursor
 cp android-migration-guide/.cursorrules /path/to/your/android/project/.cursorrules
-```
 
-Cursor reads `.cursorrules` automatically when you open the project.
-
-### GitHub Copilot (VS Code or JetBrains)
-
-```bash
+# GitHub Copilot
 mkdir -p /path/to/your/android/project/.github
 cp android-migration-guide/CLAUDE.md /path/to/your/android/project/.github/copilot-instructions.md
 ```
 
-Copilot reads `.github/copilot-instructions.md` automatically across the workspace.
-
-### Optional — Add the full reference docs
-
-If you want the AI to have the detailed migration guide and DataWedge reference available without pasting them manually:
+**Also copy the reference docs** so the AI can read the full migration guide and DataWedge reference directly from your project:
 
 ```bash
 mkdir -p /path/to/your/android/project/docs/migration
@@ -62,7 +50,17 @@ cp android-migration-guide/docs/migration-guide.md /path/to/your/android/project
 cp android-migration-guide/docs/datawedge-intents-ref.md /path/to/your/android/project/docs/migration/
 ```
 
-Claude Code and Cursor will index these files and reference them when relevant.
+Claude Code, Cursor, and Copilot will index these files and read them when referenced in a prompt or when the context is relevant.
+
+### Chat tools without file access (Claude.ai, ChatGPT, Gemini)
+
+These tools only see what you paste into the conversation window. They cannot read your filesystem.
+
+1. Open `docs/system-prompt.md` and paste the full contents as your first message
+2. Paste your `AndroidManifest.xml`, `build.gradle`, and the key source files you want help with after the prompt
+3. Optionally paste `docs/migration-guide.md` for full migration reference in the same session
+
+The discovery and migration prompts below are written for tools with file access. For chat tools, replace "scan this project" with "review the files I have pasted above".
 
 ---
 
@@ -75,7 +73,8 @@ Work through the phases below in order. Start with Phase 0 to get a full picture
 Run this first. It makes no changes — it reads your project and produces a prioritised list of everything that needs to be done, so you know the full scope before starting.
 
 ```
-Read CLAUDE.md and docs/migration-guide.md to load the Zebra migration context.
+Read CLAUDE.md for Zebra platform rules and docs/migration/migration-guide.md for the
+full A11–A15 change reference (or docs/migration-guide.md if you copied it there).
 
 Then scan this entire Android project — AndroidManifest.xml, all Kotlin/Java source
 files, build.gradle / build.gradle.kts, and libs.versions.toml if present.
@@ -101,6 +100,9 @@ Do not make any changes. Output the plan only.
 ```
 
 Review the output and confirm the scope before running any subsequent phase.
+
+> **Chat tools (ChatGPT, Gemini, Claude.ai):** Replace the first paragraph with:
+> "I have pasted the Zebra migration context and my project files above. Review them and produce a migration plan with the same five sections. Do not make any changes."
 
 ---
 
