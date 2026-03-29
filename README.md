@@ -12,6 +12,7 @@ Guidance and context files to help developers port Android apps to Android 11–
 | `docs/system-prompt.md` | Paste into any AI chat tool as first message |
 | `docs/datawedge-intents-ref.md` | DataWedge Intent API quick reference |
 | `examples/` | Vetted Kotlin boilerplate for common Zebra patterns |
+| `examples/example-migration-plan.md` | Example AI-generated migration plan (Phase 0 output) |
 
 ## Quick Start by Tool
 
@@ -56,6 +57,8 @@ Primary SDKs covered:
 ## Practice App
 
 **[android-migration-sample](https://github.com/cbolen/android-migration-sample)** — A legacy inventory app intentionally written with API 30 patterns (AsyncTask, startActivityForResult, hardcoded storage paths, missing exported flags, etc.). Use it as a safe sandbox to practice applying this guide with your AI tool of choice before touching production code.
+
+**[examples/example-migration-plan.md](examples/example-migration-plan.md)** — The Phase 0 migration plan produced by running the discovery prompt against the sample app. Shows what AI-assisted analysis output looks like in practice. Note: this app was constructed to contain almost every possible migration issue at once — a real app will typically have a much smaller subset.
 
 ## Automating the Migration
 
