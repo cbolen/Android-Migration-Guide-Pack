@@ -16,6 +16,23 @@ The **majority of changes are standard Android API migrations** — the same upd
 - `compileSdk`: 35
 - Language: Kotlin preferred, Java acceptable
 
+### Recommended First Step — Project Audit
+
+Before making any changes, ask for a migration plan:
+
+```
+Read the context above, then scan my Android project and produce a migration plan with:
+1. Blocking issues (install failure or runtime crash) — file, line, API level, fix needed
+2. Required changes (silent failure or permission denied) — file, line, API level, fix needed
+3. Zebra-specific issues — DataWedge receiver flags, EMDK lifecycle, storage patterns
+4. Recommended tests per change area
+Do not make any changes yet — output the plan only.
+```
+
+Paste your `AndroidManifest.xml`, key source files, and `build.gradle` after the prompt. Review the plan, then work through the changes one phase at a time.
+
+---
+
 ### Standard Android Migration Priorities (primary — work in this order)
 1. Set `android:exported` on all manifest components with `intent-filter`
 2. Add `FLAG_IMMUTABLE` or `FLAG_MUTABLE` to all `PendingIntent` calls

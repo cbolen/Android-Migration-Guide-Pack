@@ -68,7 +68,41 @@ Claude Code and Cursor will index these files and reference them when relevant.
 
 ## Step 3 — Run the Migration Prompts
 
-Work through the phases below in order. Each prompt is a single, focused task — finish one before starting the next. This avoids the AI making conflicting changes across phases.
+Work through the phases below in order. Start with Phase 0 to get a full picture of what needs to change before touching any code.
+
+### Phase 0 — Discovery: Full Project Audit and Migration Plan
+
+Run this first. It makes no changes — it reads your project and produces a prioritised list of everything that needs to be done, so you know the full scope before starting.
+
+```
+Read CLAUDE.md and docs/migration-guide.md to load the Zebra migration context.
+
+Then scan this entire Android project — AndroidManifest.xml, all Kotlin/Java source
+files, build.gradle / build.gradle.kts, and libs.versions.toml if present.
+
+Produce a migration plan with the following sections:
+
+1. BLOCKING ISSUES (causes install failure or runtime crash)
+   - List each issue, the file and line, the API level that breaks it, and the fix needed
+
+2. REQUIRED CHANGES (behaviour breaks silently or permission is denied)
+   - List each issue, the file and line, the API level that enforces it, and the fix needed
+
+3. ZEBRA-SPECIFIC ISSUES
+   - DataWedge receiver registration, EMDK lifecycle, storage patterns, AI Suite eligibility
+
+4. RECOMMENDED TESTS
+   - Per change area: what to test, on which API level, and what a pass looks like
+
+5. SUGGESTED PHASE ORDER
+   - Recommend which of the migration phases (1–12) apply to this project and in what order
+
+Do not make any changes. Output the plan only.
+```
+
+Review the output and confirm the scope before running any subsequent phase.
+
+---
 
 ### Phase 1 — Manifest: android:exported
 
@@ -193,6 +227,27 @@ Create `migrate.sh` in your project root:
 ```bash
 #!/bin/bash
 set -e
+
+# ============================================================
+# PRE-FLIGHT: Run the Phase 0 discovery prompt BEFORE this
+# script. It produces a migration plan with no code changes
+# so you know the full scope before automation begins.
+#
+# Run it manually in Claude Code:
+#
+#   Read CLAUDE.md and docs/migration-guide.md to load the
+#   Zebra migration context. Then scan this entire Android
+#   project — AndroidManifest.xml, all Kotlin/Java source
+#   files, build.gradle / build.gradle.kts, and
+#   libs.versions.toml if present. Produce a prioritised
+#   migration plan: (1) blocking issues that cause crashes or
+#   install failures, (2) required behavioural changes,
+#   (3) Zebra-specific issues, (4) recommended tests per
+#   change area. Do not make any changes — output the plan
+#   only.
+#
+# Review and confirm the plan, then run this script.
+# ============================================================
 
 echo "=== Phase 1: android:exported ==="
 claude -p "Scan AndroidManifest.xml and add android:exported to every activity, service, receiver, and provider that has an intent-filter but is missing the attribute. Use false for internal components, true only for components that must accept external intents." --allowedTools Edit,Read,Glob,Grep

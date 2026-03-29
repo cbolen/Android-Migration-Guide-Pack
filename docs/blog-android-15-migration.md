@@ -184,7 +184,7 @@ In practice this increases line height across the app. For most screens it's bar
 
 Android 15 doesn't arrive in isolation. Apps still targeting API 30 carry the full weight of four API level bumps. Here's what you're activating at each step.
 
-### Android 12 (API 31): Manifest and PendingIntent
+### Android 12 (API 31): Manifest, PendingIntent, and Cryptography
 
 **Every manifest component with an `<intent-filter>` must declare `android:exported`** — your app will fail to install without it.
 
@@ -214,9 +214,21 @@ val pending = PendingIntent.getActivity(context, 0, intent, 0)
 val pending = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
 ```
 
+**BouncyCastle cryptographic implementations removed.** Android 12 removes the BouncyCastle provider implementations that were previously deprecated. If your app — or any third-party library it uses — specifies `"BC"` as the provider explicitly, it will throw `NoSuchProviderException` at runtime.
+
+```kotlin
+// Throws on API 31+ — explicit BouncyCastle provider
+val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding", "BC")
+
+// Correct — use the default provider (Conscrypt on Android)
+val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+```
+
+The most common source of this problem is a third-party dependency — update libraries that embed or reference BouncyCastle before bumping to API 31.
+
 ---
 
-### Android 13 (API 33): Notifications, Storage, AsyncTask, DataWedge
+### Android 13 (API 33): Notifications, Storage, AsyncTask, DataWedge, Task Manager
 
 **`POST_NOTIFICATIONS` is a runtime permission.** Any app that shows notifications must request it at an appropriate moment before calling `notify()`.
 
@@ -258,9 +270,11 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
 }
 ```
 
+**Android 13 introduces a Task Manager** accessible from the notification drawer. Users can see every app running a foreground service and stop it with one tap — the app is force-stopped with no lifecycle callbacks. For persistent scanning or sync services, design for clean resumption on next launch rather than assuming the service will run indefinitely. On dedicated-use Zebra deployments, lock down the notification shade via MX UI Manager or EHS to keep the Task Manager out of users' reach.
+
 ---
 
-### Android 14 (API 34): Foreground Services and AI Suite
+### Android 14 (API 34): Foreground Services, Notifications, and AI Suite
 
 **Foreground service types are strictly enforced.** A foreground service without a declared type crashes at runtime. Add `foregroundServiceType` to the manifest:
 
@@ -272,6 +286,20 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
 ```
 
 Valid types include `dataSync`, `location`, `mediaPlayback`, `camera`, `connectedDevice`, and others — choose the type that accurately describes what the service is doing.
+
+**Foreground service notifications are now user-dismissible.** Previously, apps could mark a foreground service notification as ongoing to keep it pinned in the drawer. On Android 14, users can swipe it away regardless — the service keeps running, but the notification is gone. If your app uses that notification to communicate scanning status or connectivity state, plan for it disappearing and surface that information in the app's own UI as well.
+
+**`USE_FULL_SCREEN_INTENT` is restricted to alarm and calling apps.** Apps targeting API 34 that are not alarm clocks or calling apps lose this permission automatically on upgrade. Full-screen intents from other apps are shown as standard expanded notifications instead. For enterprise alert scenarios — low stock warnings, critical sync failures, incoming task assignments — replace full-screen intents with high-priority `IMPORTANCE_HIGH` notification channels, which produce heads-up notifications without requiring the permission.
+
+```kotlin
+// Check before posting on API 34+
+val nm = getSystemService(NotificationManager::class.java)
+if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE || nm.canUseFullScreenIntent()) {
+    // attach full-screen intent as before
+} else {
+    // use IMPORTANCE_HIGH channel for heads-up notification instead
+}
+```
 
 **Zebra AI Suite becomes available at API 34.** If you're building apps that need AI-based barcode recognition, OCR, or shelf analysis on Zebra devices, Android 14 is the minimum API level required to use it. See the [Zebra AI Suite SDK docs](https://techdocs.zebra.com/ai-datacapture/latest/about/) for integration details.
 
@@ -312,6 +340,32 @@ The pack includes:
 - `docs/migration-guide.md` — full A11–A15 reference
 - `docs/datawedge-intents-ref.md` — DataWedge Intent API quick reference
 - `examples/` — vetted Kotlin boilerplate for DataWedge, EMDK, permissions, storage, and edge-to-edge
+
+### Start With a Migration Plan, Not a Code Change
+
+Before running any automated migration, ask the AI to audit your project and produce a plan. This runs no code changes — it reads your project and tells you exactly what needs to be done, in priority order.
+
+```
+Read CLAUDE.md and docs/migration-guide.md to load the Zebra migration context.
+
+Then scan this entire Android project — AndroidManifest.xml, all Kotlin/Java source
+files, build.gradle / build.gradle.kts, and libs.versions.toml if present.
+
+Produce a migration plan with:
+1. Blocking issues (install failure or runtime crash) — file, line, API level, fix needed
+2. Required changes (silent failure or permission denied) — file, line, API level, fix needed
+3. Zebra-specific issues — DataWedge receiver flags, EMDK lifecycle, storage patterns
+4. Recommended tests per change area
+5. Suggested order for the migration phases that apply to this project
+
+Do not make any changes. Output the plan only.
+```
+
+*[Screenshot: Claude Code terminal output — migration plan listing 14 issues across 6 files, grouped by severity]*
+
+You get a full picture of the work before a single line of code changes. Review it, confirm the scope, then work through the phases. A migration that surprises you halfway through is much harder to manage than one you planned for up front.
+
+---
 
 ### Setup in Two Minutes
 

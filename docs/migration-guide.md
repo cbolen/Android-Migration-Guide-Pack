@@ -83,9 +83,97 @@ implementation 'androidx.core:core-splashscreen:1.0+'
 installSplashScreen()
 ```
 
+**Bluetooth permissions restructured**
+
+Android 12 replaces the old location-based Bluetooth permission model with dedicated permissions. Apps no longer need `ACCESS_FINE_LOCATION` just to scan for paired devices.
+
+```xml
+<!-- Remove: BLUETOOTH, BLUETOOTH_ADMIN (or scope with maxSdkVersion) -->
+<!-- Add for API 31+: -->
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+    android:minSdkVersion="31" />
+<uses-permission android:name="android.permission.BLUETOOTH_CONNECT"
+    android:minSdkVersion="31" />
+<uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"
+    android:minSdkVersion="31" />
+<!-- Keep for API 30 and below: -->
+<uses-permission android:name="android.permission.BLUETOOTH"
+    android:maxSdkVersion="30" />
+<uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+    android:maxSdkVersion="30" />
+```
+
+Request `BLUETOOTH_SCAN` and `BLUETOOTH_CONNECT` at runtime like any other dangerous permission. If your scan does not use scan results to derive physical location, add `android:usesPermissionFlags="neverForLocation"` to `BLUETOOTH_SCAN` to avoid needing location permission.
+
+**Exact alarm permission — introduced here (`SCHEDULE_EXACT_ALARM`)**
+
+Starting with Android 12, `AlarmManager.setExact*()` and `setAlarmClock()` require the `SCHEDULE_EXACT_ALARM` permission. The permission is granted by default on first install but can be revoked by the user (and is silently revoked on app upgrade starting A14 — see that section).
+
+```xml
+<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+```
+
+```kotlin
+// Check before scheduling
+val alarmManager = getSystemService(AlarmManager::class.java)
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    if (!alarmManager.canScheduleExactAlarms()) {
+        startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
+        return
+    }
+}
+alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMs, pendingIntent)
+```
+
+**Notification trampoline restrictions**
+
+Apps targeting API 31+ can no longer use a `Service` or `BroadcastReceiver` as an intermediary to launch an `Activity` when a notification is tapped. The activity must be started directly from the `PendingIntent` attached to the notification.
+
+```kotlin
+// Before — launched Activity from a BroadcastReceiver triggered by notification tap
+// This is now blocked on API 31+
+
+// After — set PendingIntent directly on the notification action
+val intent = Intent(context, ScanResultActivity::class.java)
+val pendingIntent = PendingIntent.getActivity(
+    context, 0, intent, PendingIntent.FLAG_IMMUTABLE
+)
+NotificationCompat.Builder(context, CHANNEL_ID)
+    .setContentIntent(pendingIntent)  // Direct activity launch — allowed
+    .build()
+```
+
+**Foreground service launch from background blocked**
+
+Apps targeting API 31+ cannot start a foreground service while the app is in the background. Use `WorkManager` for deferred background work, or ensure the service is started while the app is in the foreground.
+
+```kotlin
+// If you must start a foreground service from a background context (e.g., a scheduled job):
+// Use WorkManager and let it manage the foreground service lifecycle instead
+val request = OneTimeWorkRequestBuilder<MyWorker>()
+    .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+    .build()
+WorkManager.getInstance(context).enqueue(request)
+```
+
+**BouncyCastle cryptography implementations removed**
+
+Android 12 removes the BouncyCastle implementations of many cryptographic algorithms that were previously deprecated. If your app (or any third-party library it uses) directly references `org.bouncycastle.*` classes or uses algorithms like `PBKDF2WithHmacSHA1` via a named provider, it will throw `NoSuchAlgorithmException` or `NoSuchProviderException` at runtime.
+
+```kotlin
+// Broken on API 31+ — explicit BouncyCastle provider
+val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding", "BC")  // throws on A12
+
+// Correct — use the default provider (backed by Conscrypt on Android)
+val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+```
+
+Audit your dependencies: libraries like older versions of `bcprov-jdk15on`, Spongy Castle wrappers, or any library that explicitly specifies `"BC"` as the provider will break. Update to current versions of those libraries, or switch to Android's Conscrypt/standard JCA APIs.
+
 **Behavior changes (non-crashing):**
 - Overscroll glow replaced by stretch effect — custom `EdgeEffect` overrides may look wrong
 - Dynamic Color (Material You) available — test with wallpaper theming enabled
+- Root launcher activities no longer finish on back press — they move to the background instead; don't rely on `Activity.finish()` being called on back from a root launcher activity
 
 ---
 
@@ -165,6 +253,53 @@ onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
 })
 ```
 
+**`BluetoothAdapter.enable()` and `disable()` always return `false`**
+
+Apps targeting API 33+ can no longer programmatically enable or disable Bluetooth — these methods are silently no-ops and return `false`. Direct the user to system settings instead.
+
+```kotlin
+// Broken on API 33+ targets — returns false, does nothing
+bluetoothAdapter.enable()
+
+// Correct — prompt the user
+if (!bluetoothAdapter.isEnabled) {
+    startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+}
+```
+
+**`NEARBY_WIFI_DEVICES` permission for Wi-Fi scanning**
+
+Apps targeting API 33+ that use Wi-Fi peer-to-peer, Wi-Fi Aware, or access point APIs no longer need `ACCESS_FINE_LOCATION` for those operations — use `NEARBY_WIFI_DEVICES` instead.
+
+```xml
+<uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+    android:usesPermissionFlags="neverForLocation"
+    android:minSdkVersion="33" />
+```
+
+**`WebView.setForceDark()` deprecated**
+
+Apps targeting API 33 should not call `setForceDark()` — the WebView now respects the app's theme and applies dark mode via the `prefers-color-scheme` CSS media query automatically.
+
+```kotlin
+// Deprecated on API 33+ — remove
+WebSettingsCompat.setForceDark(webView.settings, WebSettingsCompat.FORCE_DARK_ON)
+
+// Instead, set your app theme to DayNight and WebView handles it automatically
+// In themes.xml: parent="Theme.MaterialComponents.DayNight"
+```
+
+**`USE_EXACT_ALARM` — install-time permission for alarm/calendar apps**
+
+If your app's primary purpose is an alarm or calendar, you can declare `USE_EXACT_ALARM` instead of `SCHEDULE_EXACT_ALARM`. It is granted automatically at install and cannot be revoked by the user — but it is restricted to alarm/calendar use cases and will be reviewed by Google Play.
+
+```xml
+<!-- Only if your app IS a clock/alarm/calendar app -->
+<uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+```
+
+For general enterprise apps (scan, sync, workflow), stick with `SCHEDULE_EXACT_ALARM` and the `canScheduleExactAlarms()` check described in the A12 section.
+
 **Subtle UI differences:**
 - Clipboard read shows system toast — remove any custom "Copied!" toasts to avoid duplication
 - Per-app language selector appears in system settings
@@ -183,8 +318,8 @@ onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
 ```
 
 Valid types: `camera`, `connectedDevice`, `dataSync`, `health`, `location`,
-`mediaPlayback`, `mediaProjection`, `microphone`, `phoneCall`, `remoteMessaging`,
-`shortService`, `specialUse`, `systemExempted`
+`mediaPlayback`, `mediaProjection`, `mediaProcessing` *(added A15)*, `microphone`,
+`phoneCall`, `remoteMessaging`, `shortService`, `specialUse`, `systemExempted`
 
 **Partial photo access**
 ```xml
@@ -200,8 +335,12 @@ else false
 val canReadMedia = hasFullAccess || hasPartialAccess
 ```
 
-**`SCHEDULE_EXACT_ALARM` revoked on upgrade**
+**`SCHEDULE_EXACT_ALARM` silently revoked on app upgrade**
+
+`SCHEDULE_EXACT_ALARM` was introduced in A12 (see that section). Starting with A14, the permission is silently revoked when the app is updated — the user is not prompted, and no broadcast is sent.
+
 ```kotlin
+// Add this check to onResume — the permission may have disappeared after an OTA or app update
 val alarmManager = getSystemService(AlarmManager::class.java)
 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
     if (!alarmManager.canScheduleExactAlarms()) {
@@ -209,6 +348,82 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
     }
 }
 ```
+
+**Safer intents — implicit intents to internal components blocked**
+
+Apps targeting API 34 can no longer send implicit intents to components declared as non-exported within their own app. Use explicit intents for all internal routing.
+
+```kotlin
+// Blocked on API 34+ — implicit intent matching internal non-exported component
+startActivity(Intent("com.myapp.ACTION_SCAN_RESULT"))
+
+// Correct — explicit intent
+startActivity(Intent(context, ScanResultActivity::class.java))
+```
+
+**`USE_FULL_SCREEN_INTENT` restricted to alarm and calling apps**
+
+Apps targeting API 34 that are not alarm clock or calling apps lose the `USE_FULL_SCREEN_INTENT` permission automatically. Full-screen intents posted by other apps are displayed as standard expanded notifications instead.
+
+```kotlin
+// Check whether full-screen intents are still permitted before posting
+val notificationManager = getSystemService(NotificationManager::class.java)
+if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+    notificationManager.canUseFullScreenIntent()) {
+    // attach full-screen intent
+} else {
+    // fall back to high-priority heads-up notification
+}
+```
+
+For enterprise alert scenarios (low battery, connectivity lost, critical workflow failures), replace full-screen intents with high-priority `IMPORTANCE_HIGH` notification channels — these produce heads-up notifications without requiring the permission.
+
+**Background activity launch restrictions (introduced here, tightened further in A15)**
+
+Apps targeting API 34 cannot start activities from the background unless they hold a specific exemption token (e.g., a `PendingIntent` granted by the system, an active notification full-screen intent, or a visible bound service). See the A15 section for additional restrictions added there.
+
+**Safer dynamic code loading**
+
+Apps targeting API 34 that dynamically load DEX files (via `DexClassLoader` or similar) must ensure those files are read-only before loading. Writable files are rejected at runtime.
+
+```kotlin
+val dexFile = File(context.filesDir, "plugin.dex")
+dexFile.setReadOnly() // required before loading on API 34+
+val classLoader = DexClassLoader(dexFile.absolutePath, null, null, classLoader)
+```
+
+**Zip path traversal prevention**
+
+`ZipFile` and `ZipInputStream` now throw `ZipException` for entries whose names contain path traversal sequences (e.g., `../`). If your app unzips files received from external sources or MDM pushes, validate entry names before extraction.
+
+```kotlin
+fun safeExtract(zip: ZipInputStream, destDir: File) {
+    var entry = zip.nextEntry
+    while (entry != null) {
+        val target = File(destDir, entry.name).canonicalFile
+        if (!target.path.startsWith(destDir.canonicalPath + File.separator)) {
+            throw SecurityException("Zip path traversal: ${entry.name}")
+        }
+        // extract...
+        entry = zip.nextEntry
+    }
+}
+```
+
+**Context-registered broadcasts queued when app is cached**
+
+Implicit broadcasts sent to context-registered receivers are queued (not delivered) while the app is in the cached state. Delivery resumes when the app returns to the foreground.
+
+- **Impact for DataWedge**: DataWedge scan result broadcasts are explicit (targeted at your registered receiver), so they are not affected by this queueing. However, any implicit system broadcasts your app listens for (connectivity changes, battery state, etc.) may arrive in a burst when the app resumes
+- Design broadcast handlers to be idempotent — processing the same broadcast twice should produce the same result
+
+**`MediaProjection` — user consent required per capture session**
+
+Apps targeting API 34 must request user consent every time a screen capture session starts — the previous one-time grant no longer carries over.
+
+**`JobScheduler` / `WorkManager` reinforcement**
+
+Jobs that exceed their granted main-thread time now trigger an ANR. Ensure all `Worker.doWork()` implementations run I/O and processing on background threads and do not block the main thread.
 
 **Zebra AI Suite becomes available at this API level** — if adding AI-based recognition (barcode, OCR, shelf) to your app, this is the minimum API level required.
 
@@ -261,7 +476,7 @@ val notification = NotificationCompat.Builder(context, CHANNEL_ID)
 - For enterprise Zebra deployments, MDM can disable Private Space via policy — it is unlikely to be present on managed dedicated-use devices
 - If your app could be installed into Private Space: it runs as an isolated profile, so DataWedge profile association must match the app's package name in that profile context
 
-**Safer intents**
+**Safer intents (extended from A14)**
 - Intents targeting a specific component must accurately match that component's `intent-filter` — action, category, and data must align
 - Intents with no action no longer match any intent filter
 - Audit any implicit intents used for internal app routing — convert to explicit intents where possible:
@@ -288,10 +503,81 @@ WorkManager.getInstance(context).enqueue(
 )
 ```
 
+**16 KB memory page size — prepare native code now**
+
+Android 15 adds support for 16 KB memory page sizes. No current Zebra devices use a 16 KB page size, so this is not an immediate runtime concern for Zebra-deployed apps. However, Google Play now requires that apps with native code support 16 KB page sizes, so this matters if your app is distributed via Play Store. It is also preparation for future Android devices broadly.
+
+Zebra AI Suite already ships with 16 KB-compatible builds. For your own native code or third-party native SDKs, audit and rebuild before Play Store submission:
+
+```bash
+# Check alignment of each .so — must show 16384 (0x4000)
+readelf -l libmylibrary.so | grep LOAD
+```
+
+```cmake
+# CMakeLists.txt — add to native targets
+target_link_options(mylib PRIVATE "-Wl,-z,max-page-size=16384")
+```
+
+Audit every `.so` in your APK — third-party native SDKs (PDF renderers, crypto libraries, barcode engines) each need their own 16 KB-aligned build from the vendor.
+
+**Audio focus restrictions**
+
+Apps targeting API 35 must be in the foreground or running an audio-related foreground service to request audio focus. Background audio focus requests are denied.
+
+- **Impact**: Any scan beep, voice prompt, or audio alert triggered from a background `Service` or `BroadcastReceiver` may be silently denied
+- Move audio playback into a foreground service with type `mediaPlayback`, or ensure audio is always triggered while the app is in the foreground
+- DataWedge's built-in scan beep is handled by the DataWedge service itself and is unaffected — this only applies to audio your app plays directly
+
+**`Configuration` no longer excludes system bars**
+
+`Configuration.screenWidthDp` and `Configuration.screenHeightDp` now include the area occupied by system bars. Previously these values reflected the space available after subtracting system bar insets.
+
+```kotlin
+// Broken on API 35+ — screenWidthDp now includes system bar space
+val widthPx = resources.configuration.screenWidthDp * density
+
+// Correct — use WindowMetrics for available content area
+val windowMetrics = windowManager.currentWindowMetrics
+val insets = windowMetrics.windowInsets.getInsetsIgnoringVisibility(
+    WindowInsetsCompat.Type.systemBars()
+)
+val availableWidth = windowMetrics.bounds.width() - insets.left - insets.right
+val availableHeight = windowMetrics.bounds.height() - insets.top - insets.bottom
+```
+
 **`elegantTextHeight` defaults to true**
 - The `elegantTextHeight` attribute on `TextView` is now true by default for apps targeting Android 15
 - Replaces the compact font metric with a taller, more readable one — increases line height for scripts with large vertical metrics
 - Test all text-heavy screens, particularly on smaller Zebra displays (WS50/WS501) — rows and labels that were sized to compact font metrics may be clipped or overflow their containers
+
+**`TextView` and `EditText` dimension changes**
+- `TextView` reserves extra horizontal space for complex letter shapes (e.g., Arabic, Indic scripts) — fixed-width text containers may truncate
+- `EditText` enforces a locale-aware minimum line height — single-line fields may be taller than expected
+- Test all form fields and data entry screens, particularly on Zebra devices deployed in regions using non-Latin scripts
+
+**Minimum `targetSdkVersion` 24 required to install**
+
+Devices running Android 15 cannot install APKs with `targetSdkVersion` below 24. If you are still shipping a legacy build with a low target SDK, it cannot be sideloaded or MDM-pushed onto A15 devices.
+
+**Pending intents canceled when package is stopped**
+
+If a package is force-stopped (by the user via Task Manager, by the system, or by ADB), any outstanding `PendingIntent`s associated with it are now canceled. Alarm triggers and scheduled `WorkManager` jobs that fire while the app is stopped will not deliver.
+
+- Ensure your app re-registers any critical alarms or schedules pending work in `onCreate` / on next launch rather than assuming previously registered intents will survive a force-stop
+
+**OpenJDK 17 API behavioral changes**
+
+Android 15 aligns with OpenJDK 17. Three specific behavioral changes affect apps targeting API 35:
+- `String.format()` / `Formatter` — some edge-case format specifier behaviors changed
+- `Locale.getLanguage()` — returns updated IANA language codes for certain locales (e.g., `iw` → `he`, `ji` → `yi`)
+- `Random.ints()` / `Random.nextInt()` — sequence output may differ if your code assumed a specific seed behavior
+
+If your app generates locale-sensitive strings, formats numbers/dates, or uses seeded `Random` for reproducible output, test these areas explicitly.
+
+**WebSQL deprecated in WebView**
+
+`WebSQL` database support is deprecated and will be removed in a future release. If any in-app `WebView` pages use `openDatabase()` (WebSQL), migrate to `IndexedDB` or `localStorage`.
 
 **`WorkManager` / `JobScheduler` constraints tightened**
 - Jobs may be deferred more aggressively
@@ -433,9 +719,31 @@ These changes require no code fix but affect UX, user perception, and QA sign-of
 - Users can grant approximate location (`ACCESS_COARSE_LOCATION`) even when the app requests precise location
 - **Impact**: If your app requires precise location, check `LocationManager.isProviderEnabled` and handle the degraded case
 
+**Foreground service notification delay (10 seconds)**
+- Certain foreground services have their notification suppressed for 10 seconds after start — if the service finishes within that window, no notification is shown at all
+- Affects short-lived services (progress bars, brief sync operations)
+- **Impact**: Do not design UX around the foreground notification always being visible immediately — it may not appear for brief services
+
+**Custom notification layout enforcement**
+- Apps targeting API 31 that use fully custom `RemoteViews` notifications must fit within the system notification template (header area is system-controlled)
+- Custom backgrounds and full-bleed layouts are no longer applied to the notification shade
+- **Impact**: Test all custom notification layouts on an API 31+ device — branding or custom header designs may need to be moved into the content area
+
+**Mic/camera quick tile toggles**
+- Users can disable microphone or camera access for all apps system-wide via Quick Settings toggles
+- When toggled off, camera returns a black frame and mic returns silence — no exception is thrown, no permission change fires
+- **Impact**: Camera-based scanning apps may silently stop working if the user has disabled the camera toggle. There is no API to detect the toggle state — the only signal is empty/black frames
+- **Zebra enterprise note**: On managed deployments, prevent users from reaching the Quick Settings panel at all. Use Zebra MX UI Manager (via StageNow or your MDM) to restrict or remove Quick Settings tiles, or use Enterprise Home Screen (EHS) to lock the status bar / notification shade so users cannot pull it down. Either approach removes the toggle from user reach without requiring any app code change
+
 ---
 
 ### Android 13 (API 33)
+
+**Task Manager — users can stop foreground services**
+- Android 13 adds a Task Manager accessible from the notification drawer that lists all apps running foreground services and lets the user stop them with one tap
+- The app is force-stopped — no lifecycle callbacks fire, no `onDestroy` runs
+- **Impact**: Persistent scanning or data-sync services can be killed by the user at any time. Design services to resume cleanly on next app launch. Do not store unsaved state only in memory inside a long-running service
+- **Zebra enterprise note**: On dedicated-use devices, lock down the notification shade via MX UI Manager or EHS to prevent users from accessing the Task Manager — same approach as for the mic/camera Quick Settings toggles
 
 **Clipboard access toast**
 - System shows a toast ("App pasted from your clipboard") whenever an app reads clipboard content
@@ -477,10 +785,19 @@ These changes require no code fix but affect UX, user perception, and QA sign-of
 - Predictive back gesture shows a preview of the destination screen behind the current one as the user swipes
 - **Impact**: If your destination Activity/Fragment has a slow `onCreate` or no background set, the preview looks blank or glitchy. Ensure screens render quickly and have a proper background colour
 
+**Foreground service notifications are now user-dismissible**
+- Users can swipe away foreground service notifications even if the app set them as ongoing/non-dismissible — the service continues running, only the notification is gone
+- **Impact**: Enterprise apps that relied on a persistent notification to communicate scanning status or connectivity state to the user can no longer guarantee that notification stays visible. Consider surfacing critical status in the app's own UI rather than relying solely on the notification
+- **Zebra note**: On dedicated-use devices, this is less of a concern since users typically don't interact with the notification shade — but test your UX in case the notification disappears
+
+**Non-linear font scaling up to 200%**
+- Android 14 introduces non-linear font scaling so that large text sizes scale less aggressively than small text — at 200% scale, body text grows significantly but headings grow less
+- Use `sp` units everywhere for text sizes; never `dp` for text
+- **Impact on Zebra devices**: WS50/WS501 and other small-screen devices where users may increase font size to compensate for screen size — test at 130% and 200% scale, particularly data tables, scan result lists, and label fields
+
 **Exact alarm permission revoked on upgrade**
-- `SCHEDULE_EXACT_ALARM` is revoked when the app is updated if the user had previously denied it
-- System shows no UI — the permission is silently gone
-- **Impact**: Scheduled jobs that rely on exact timing silently stop working after an OTA update. Add a check on `onResume` and prompt the user to re-grant if needed
+- `SCHEDULE_EXACT_ALARM` (introduced in A12) is silently revoked when the app is updated — no system UI, no broadcast
+- **Impact**: Scheduled jobs that rely on exact timing silently stop working after an OTA update. Add a `canScheduleExactAlarms()` check on `onResume` and prompt the user to re-grant if needed
 
 ---
 
@@ -505,6 +822,15 @@ These changes require no code fix but affect UX, user perception, and QA sign-of
 ---
 
 ### Cross-Version Notes
+
+**Non-SDK interface restrictions (all API levels, tightened each release)**
+
+Android restricts access to non-SDK interfaces (private APIs accessed via reflection or JNI that are not part of the public SDK). The blocked list is updated in every major Android release — interfaces that worked on A11 may be blocked on A12, A13, etc.
+
+- Run `./gradlew lint` and look for `PrivateApi` or `SoonBlockedPrivateApi` warnings
+- At runtime, accessing a blocked interface throws `NoSuchMethodException`, `NoSuchFieldException`, or causes a `UnsatisfiedLinkError` (JNI)
+- Android Studio's APK Analyzer and the `veridex` tool (from the Android SDK) can scan your APK for non-SDK usages before they break at runtime
+- **Impact**: Third-party libraries are the most common source — update dependencies before each `targetSdk` bump and re-scan
 
 **"Only this time" permission (API 30+)**
 - Location, microphone, and camera grants can be session-only
