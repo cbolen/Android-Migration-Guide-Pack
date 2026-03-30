@@ -55,6 +55,10 @@ Review the files I have pasted and produce a migration plan with the following s
 
 4. RECOMMENDED TESTS
    - Per change area: what to test, on which API level, and what a pass looks like
+   - Include UI and visual behavioural tests: edge-to-edge layout in both gesture and
+     3-button navigation modes, predictive back swipe preview, text overflow at large
+     font scales, and any Zebra device-specific display considerations (e.g. WS50/WS501
+     square display)
 
 5. SUGGESTED PHASE ORDER
    - Recommend which changes to tackle first and in what order, starting with anything
