@@ -146,7 +146,7 @@ class BootReceiver : BroadcastReceiver() {
 
 ---
 
-> **Migrating from an older targetSdk?** If your app is still targeting API 30, 31, or 33 you will also need to address the changes introduced in those releases — `android:exported`, `PendingIntent` flags, `AsyncTask` removal, and more. See the [Addendum: Cumulative Changes from Android 12–14](#addendum-cumulative-changes-from-android-1214) at the end of this post for the full list with code examples.
+> **Migrating from an older targetSdk?** If your app is still targeting API 30, 31, or 33 you will also need to address the breaking changes introduced in those releases — `android:exported`, `PendingIntent` flags, `AsyncTask` removal, and more. See the [Addendum: Cumulative Changes from Android 12–14](#addendum-cumulative-changes-from-android-1214) at the end of this post for the full list with code examples.
 
 ---
 
@@ -358,13 +358,15 @@ val pending = PendingIntent.getActivity(context, 0, intent, 0)
 val pending = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE)
 ```
 
-**BouncyCastle cryptographic implementations removed.** Calling `Cipher.getInstance(..., "BC")` throws `NoSuchProviderException` at runtime on API 31+. Use the default provider instead:
+**BouncyCastle cryptographic implementations removed.** This only affects code that is hardcoded to request the BouncyCastle provider by name — passing `"BC"` as the second argument to `Cipher.getInstance()`. When that string is present, Android 12 throws `NoSuchProviderException` at runtime because the BC provider implementations were removed. Code that calls `Cipher.getInstance()` without a provider argument is unaffected — Android routes it to Conscrypt automatically and everything works fine.
+
+The fix is simply to remove the provider argument. The most common source of this problem is a third-party encryption library that hardcodes `"BC"` internally — check your dependencies if you don't see it in your own code.
 
 ```kotlin
-// Throws on API 31+
+// Throws on API 31+ — provider hardcoded to "BC"
 val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding", "BC")
 
-// Correct — use the default provider (Conscrypt on Android)
+// Correct — no provider argument, Android uses Conscrypt by default
 val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
 ```
 
