@@ -104,7 +104,11 @@ startActivity(intent)
 
 ### TLS 1.0 and 1.1 Are Blocked
 
-Apps targeting Android 15 can no longer connect to servers using TLS 1.0 or 1.1 — those connections fail outright. Enterprise apps frequently connect to internal infrastructure — on-premise APIs, ERP systems, warehouse management servers — that may still be running older TLS configurations. Confirm all endpoints your app contacts support TLS 1.2 or higher before the migration goes out.
+Apps targeting Android 15 can no longer connect to servers using TLS 1.0 or 1.1 — those connections fail outright.
+
+For most apps this will not be an issue. TLS 1.0 and 1.1 have been considered cryptographically weak for over a decade — both protocols are vulnerable to attacks such as POODLE and BEAST. Major browsers (Chrome, Firefox, Safari, Edge) all dropped support between 2020 and 2021, and most server-side frameworks and cloud platforms stopped offering them around the same time. Any public API or modern hosted service your app talks to almost certainly already requires TLS 1.2 or higher.
+
+Where to be careful is internal enterprise infrastructure — on-premise APIs, ERP systems, warehouse management servers, or legacy middleware — that may not have been updated on the same schedule as public-facing systems. If your app connects to anything on-premise, confirm those endpoints support TLS 1.2+ before the migration goes out. If they don't, that is a conversation for your IT or infrastructure team rather than a code change in the app.
 
 ---
 
