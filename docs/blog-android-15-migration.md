@@ -146,7 +146,7 @@ class BootReceiver : BroadcastReceiver() {
 
 ---
 
-> **Migrating from an older targetSdk?** If your app is still targeting API 30, 31, or 33 you will also need to address the breaking changes introduced in those releases — `android:exported`, `PendingIntent` flags, `AsyncTask` removal, and more. See the [Addendum: Cumulative Changes from Android 12–14](#addendum-cumulative-changes-from-android-1214) at the end of this post for the full list with code examples.
+> **Migrating from an older targetSdk?** If your app is still targeting API 30, 31, or 33 you will also need to address the changes introduced in those releases — `android:exported`, `PendingIntent` flags, `AsyncTask` removal, and more. See the [Addendum: Cumulative Changes from Android 12–14](#addendum-cumulative-changes-from-android-1214) at the end of this post for the full list with code examples.
 
 ---
 
