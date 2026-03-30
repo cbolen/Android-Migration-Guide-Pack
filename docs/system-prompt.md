@@ -34,21 +34,36 @@ notes): paste the contents of `docs/migration-guide.md` after this file in the s
 
 ### Recommended First Step — Project Audit
 
-Before making any changes, paste your project files and ask for a migration plan:
+Before making any changes, paste your project files and ask for a migration plan.
+
+> Paste `AndroidManifest.xml`, `build.gradle`, and your key source files into the conversation
+> first, then use the prompt below.
 
 ```
 I have pasted the Zebra migration context and my project files above.
 
-Produce a migration plan covering:
-1. Blocking issues (install failure or runtime crash) — file, line, API level, fix needed
-2. Required changes (silent failure or permission denied) — file, line, API level, fix needed
-3. Zebra-specific issues — DataWedge receiver flags, EMDK lifecycle, storage patterns
-4. Recommended tests per change area
+Review the files I have pasted and produce a migration plan with the following sections:
 
-Do not make any changes yet — output the plan only.
+1. BLOCKING ISSUES (causes install failure or runtime crash)
+   - List each issue, the file and line, the API level that breaks it, and the fix needed
+
+2. REQUIRED CHANGES (behaviour breaks silently or permission is denied)
+   - List each issue, the file and line, the API level that enforces it, and the fix needed
+
+3. ZEBRA-SPECIFIC ISSUES
+   - DataWedge receiver registration, EMDK lifecycle, storage patterns, AI Suite eligibility
+
+4. RECOMMENDED TESTS
+   - Per change area: what to test, on which API level, and what a pass looks like
+
+5. SUGGESTED PHASE ORDER
+   - Recommend which changes to tackle first and in what order, starting with anything
+     that causes install failure or a runtime crash
+
+Do not make any changes. Output the plan only.
 ```
 
-Review the plan, then work through the changes one phase at a time.
+Review and confirm the plan before making any changes.
 
 ---
 
