@@ -9,6 +9,7 @@ Guidance and context files to help developers port Android apps to Android 11–
 | `CLAUDE.md` | Drop in project root — Claude Code loads it automatically |
 | `.cursorrules` | Drop in project root — Cursor loads it automatically |
 | `docs/migration-guide.md` | Full A11–A15 migration reference |
+| `docs/toolchain-upgrade.md` | JDK → Gradle → AGP upgrade guide (prerequisite before targetSdk bumps) |
 | `docs/system-prompt.md` | Paste into any AI chat tool as first message |
 | `docs/datawedge-intents-ref.md` | DataWedge Intent API quick reference |
 | `examples/` | Vetted Kotlin boilerplate for common Zebra patterns |
