@@ -102,6 +102,8 @@ Review the output and confirm scope before proceeding.
 ### Phase 1 — Manifest: android:exported
 
 ```
+Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
+
 Scan AndroidManifest.xml and find every <activity>, <service>, <receiver>, and <provider>
 that has an <intent-filter> but is missing android:exported.
 Add android:exported="false" to internal components and android:exported="true" only
@@ -112,6 +114,8 @@ activities, share targets, system broadcast receivers). Show me the list before 
 ### Phase 2 — PendingIntent flags
 
 ```
+Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
+
 Find all PendingIntent.getActivity(), PendingIntent.getBroadcast(), and
 PendingIntent.getService() calls in this project. Add FLAG_IMMUTABLE to every one that
 doesn't already have it. Only use FLAG_MUTABLE if the PendingIntent is used with
@@ -122,6 +126,8 @@ before changing them.
 ### Phase 3 — Activity Results
 
 ```
+Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
+
 Replace all startActivityForResult() and onActivityResult() patterns in this project
 with the registerForActivityResult() API using ActivityResultContracts.
 Keep the same business logic — only change the API pattern.
@@ -130,6 +136,8 @@ Keep the same business logic — only change the API pattern.
 ### Phase 4 — Permission Results
 
 ```
+Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
+
 Replace all onRequestPermissionsResult() overrides with registerForActivityResult()
 using ActivityResultContracts.RequestPermission or RequestMultiplePermissions.
 Update the permission request call sites to match.
@@ -138,6 +146,8 @@ Update the permission request call sites to match.
 ### Phase 5 — Storage paths
 
 ```
+Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
+
 Find every place this project writes or reads files using hardcoded paths
 (/sdcard/, /storage/emulated/0/, Environment.getExternalStorageDirectory()).
 Migrate app-private files to getExternalFilesDir().
@@ -148,6 +158,8 @@ Do not use MANAGE_EXTERNAL_STORAGE.
 ### Phase 6 — AsyncTask
 
 ```
+Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
+
 Replace all AsyncTask subclasses in this project with Kotlin coroutines.
 Use viewModelScope or lifecycleScope as appropriate.
 Move background work to Dispatchers.IO and UI updates to Dispatchers.Main.
@@ -157,6 +169,8 @@ Keep the same data flow and error handling logic.
 ### Phase 7 — POST_NOTIFICATIONS permission
 
 ```
+Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
+
 Find all places this project shows notifications via NotificationManager.notify().
 Add a POST_NOTIFICATIONS runtime permission check before every notify() call
 (required on API 33+). Use ActivityResultContracts.RequestPermission to request it.
@@ -166,6 +180,8 @@ Also check that PendingIntent flags are FLAG_IMMUTABLE on all notification actio
 ### Phase 8 — Back navigation
 
 ```
+Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
+
 Replace all override fun onBackPressed() implementations with OnBackPressedCallback
 registered via onBackPressedDispatcher.addCallback().
 Preserve the existing back navigation logic inside the callback's handleOnBackPressed().
@@ -174,6 +190,8 @@ Preserve the existing back navigation logic inside the callback's handleOnBackPr
 ### Phase 9 — Edge-to-edge insets
 
 ```
+Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
+
 Add WindowInsetsCompat handling to all activities in this project.
 Apply window insets to the root view or scrollable container so content is not
 obscured by the status bar or navigation bar. Use ViewCompat.setOnApplyWindowInsetsListener.
@@ -183,6 +201,8 @@ This is required when targeting API 35.
 ### Phase 10 — Splash screen
 
 ```
+Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
+
 Remove the custom SplashActivity and replace it with the androidx.core:core-splashscreen
 library. Add the dependency to build.gradle, add the Theme.SplashScreen parent to the
 app theme in styles.xml, and call installSplashScreen() in MainActivity.onCreate()
@@ -192,6 +212,8 @@ before setContentView.
 ### Phase 11 — DataWedge receiver registration (API 33+)
 
 ```
+Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
+
 Find all dynamic registerReceiver() calls for DataWedge scan receivers in this project.
 Update them to pass RECEIVER_NOT_EXPORTED as the export flag when running on API 33+,
 using a Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU check.
@@ -201,6 +223,8 @@ DataWedge broadcasts come from a system service and do not require RECEIVER_EXPO
 ### Phase 12 — Build target
 
 ```
+Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
+
 Update app/build.gradle (or build.gradle.kts):
 - compileSdk 35
 - targetSdk 35
@@ -222,40 +246,40 @@ set -e
 # Run Phase 0 manually in Claude Code first to understand scope before running this script.
 
 echo "=== Phase 1: android:exported ==="
-claude -p "Scan AndroidManifest.xml and add android:exported to every activity, service, receiver, and provider that has an intent-filter but is missing the attribute. Use false for internal components, true only for components that must accept external intents." --allowedTools Edit,Read,Glob,Grep
+claude -p "Refer to docs/migration/migration-guide.md for guidance. Scan AndroidManifest.xml and add android:exported to every activity, service, receiver, and provider that has an intent-filter but is missing the attribute. Use false for internal components, true only for components that must accept external intents." --allowedTools Edit,Read,Glob,Grep
 
 echo "=== Phase 2: PendingIntent FLAG_IMMUTABLE ==="
-claude -p "Find all PendingIntent.getActivity, getBroadcast, and getService calls missing FLAG_IMMUTABLE and add it. Only use FLAG_MUTABLE where genuinely required." --allowedTools Edit,Read,Glob,Grep
+claude -p "Refer to docs/migration/migration-guide.md for guidance. Find all PendingIntent.getActivity, getBroadcast, and getService calls missing FLAG_IMMUTABLE and add it. Only use FLAG_MUTABLE where genuinely required." --allowedTools Edit,Read,Glob,Grep
 
 echo "=== Phase 3: Activity Results ==="
-claude -p "Replace all startActivityForResult and onActivityResult usage with registerForActivityResult using ActivityResultContracts. Keep existing business logic." --allowedTools Edit,Read,Glob,Grep
+claude -p "Refer to docs/migration/migration-guide.md for guidance. Replace all startActivityForResult and onActivityResult usage with registerForActivityResult using ActivityResultContracts. Keep existing business logic." --allowedTools Edit,Read,Glob,Grep
 
 echo "=== Phase 4: Permission Results ==="
-claude -p "Replace all onRequestPermissionsResult overrides with registerForActivityResult using ActivityResultContracts.RequestPermission or RequestMultiplePermissions." --allowedTools Edit,Read,Glob,Grep
+claude -p "Refer to docs/migration/migration-guide.md for guidance. Replace all onRequestPermissionsResult overrides with registerForActivityResult using ActivityResultContracts.RequestPermission or RequestMultiplePermissions." --allowedTools Edit,Read,Glob,Grep
 
 echo "=== Phase 5: Storage paths ==="
-claude -p "Find and replace hardcoded external storage paths and Environment.getExternalStorageDirectory() usage. Migrate to getExternalFilesDir() for app-private files and MediaStore for shared media." --allowedTools Edit,Read,Glob,Grep
+claude -p "Refer to docs/migration/migration-guide.md for guidance. Find and replace hardcoded external storage paths and Environment.getExternalStorageDirectory() usage. Migrate to getExternalFilesDir() for app-private files and MediaStore for shared media." --allowedTools Edit,Read,Glob,Grep
 
 echo "=== Phase 6: AsyncTask ==="
-claude -p "Replace all AsyncTask subclasses with Kotlin coroutines using viewModelScope or lifecycleScope. Move IO work to Dispatchers.IO." --allowedTools Edit,Read,Glob,Grep
+claude -p "Refer to docs/migration/migration-guide.md for guidance. Replace all AsyncTask subclasses with Kotlin coroutines using viewModelScope or lifecycleScope. Move IO work to Dispatchers.IO." --allowedTools Edit,Read,Glob,Grep
 
 echo "=== Phase 7: POST_NOTIFICATIONS ==="
-claude -p "Add POST_NOTIFICATIONS permission check before all NotificationManager.notify() calls. Add the permission to AndroidManifest.xml." --allowedTools Edit,Read,Glob,Grep
+claude -p "Refer to docs/migration/migration-guide.md for guidance. Add POST_NOTIFICATIONS permission check before all NotificationManager.notify() calls. Add the permission to AndroidManifest.xml." --allowedTools Edit,Read,Glob,Grep
 
 echo "=== Phase 8: Back navigation ==="
-claude -p "Replace all onBackPressed() overrides with OnBackPressedCallback registered via onBackPressedDispatcher.addCallback()." --allowedTools Edit,Read,Glob,Grep
+claude -p "Refer to docs/migration/migration-guide.md for guidance. Replace all onBackPressed() overrides with OnBackPressedCallback registered via onBackPressedDispatcher.addCallback()." --allowedTools Edit,Read,Glob,Grep
 
 echo "=== Phase 9: Edge-to-edge insets ==="
-claude -p "Add WindowInsetsCompat inset handling to all activities so content is not obscured by system bars. Required for targetSdk 35." --allowedTools Edit,Read,Glob,Grep
+claude -p "Refer to docs/migration/migration-guide.md for guidance. Add WindowInsetsCompat inset handling to all activities so content is not obscured by system bars. Required for targetSdk 35." --allowedTools Edit,Read,Glob,Grep
 
 echo "=== Phase 10: Splash screen ==="
-claude -p "Remove custom SplashActivity and replace with androidx.core:core-splashscreen. Add the dependency, update the theme, and call installSplashScreen() in MainActivity." --allowedTools Edit,Read,Glob,Grep
+claude -p "Refer to docs/migration/migration-guide.md for guidance. Remove custom SplashActivity and replace with androidx.core:core-splashscreen. Add the dependency, update the theme, and call installSplashScreen() in MainActivity." --allowedTools Edit,Read,Glob,Grep
 
 echo "=== Phase 11: DataWedge receiver flag ==="
-claude -p "Update all registerReceiver calls for DataWedge scan receivers to pass RECEIVER_NOT_EXPORTED on API 33+ with a Build.VERSION.SDK_INT check." --allowedTools Edit,Read,Glob,Grep
+claude -p "Refer to docs/migration/migration-guide.md for guidance. Update all registerReceiver calls for DataWedge scan receivers to pass RECEIVER_NOT_EXPORTED on API 33+ with a Build.VERSION.SDK_INT check." --allowedTools Edit,Read,Glob,Grep
 
 echo "=== Phase 12: Build target ==="
-claude -p "Update build.gradle to compileSdk 35, targetSdk 35, minSdk 30. Add any Jetpack dependencies required by the changes made in previous phases." --allowedTools Edit,Read,Glob,Grep
+claude -p "Refer to docs/migration/migration-guide.md for guidance. Update build.gradle to compileSdk 35, targetSdk 35, minSdk 30. Add any Jetpack dependencies required by the changes made in previous phases." --allowedTools Edit,Read,Glob,Grep
 
 echo "=== Migration complete — review changes with: git diff ==="
 ```
