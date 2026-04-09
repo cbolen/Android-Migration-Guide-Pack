@@ -2,6 +2,8 @@
 
 Context files and migration prompts to help developers port Android apps to Android 11–15 using AI coding assistants (Claude Code, Cursor, GitHub Copilot, ChatGPT, Gemini).
 
+> **Caution:** This pack uses AI to assist with migration analysis and code changes. AI suggestions can contain errors, miss edge cases, or produce code that compiles but behaves incorrectly. Always review every change before committing, test on real devices at each API level, and consult the official [Android API documentation](https://developer.android.com/about/versions) and [Zebra TechDocs](https://techdocs.zebra.com) when in doubt. This pack is a productivity aid, not a substitute for developer judgment.
+
 ## What's Included
 
 | File | Purpose |
