@@ -24,6 +24,9 @@ These cause crashes, install failures, or silent data loss. Flag any of these pa
 - **Runtime crash**: `PendingIntent` created without `FLAG_IMMUTABLE` or `FLAG_MUTABLE`
 - **Runtime crash**: `Cipher.getInstance(algo, "BC")` — BouncyCastle provider removed; use default provider
 - **Silent failure**: notification tapped → `BroadcastReceiver`/`Service` → `startActivity()` is blocked (notification trampoline); attach `PendingIntent` directly to the notification
+- **Runtime crash**: `MediaRecorder()` no-arg constructor removed — use `MediaRecorder(context)`
+- **Security exception**: `ACTION_CLOSE_SYSTEM_DIALOGS` broadcast blocked — remove any usage
+- **Runtime exception**: AES/GCM cipher requires exactly 12-byte IV — any other length throws `InvalidAlgorithmParameterException`
 - **Runtime exception**: `AlarmManager.setExact*()` without `SCHEDULE_EXACT_ALARM` permission; check `canScheduleExactAlarms()` before scheduling
 - **Blocked**: starting a foreground service while app is in background; use `WorkManager` expedited jobs instead
 - **Bluetooth**: `BLUETOOTH`/`BLUETOOTH_ADMIN` replaced by `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT`/`BLUETOOTH_ADVERTISE` for API 31+
@@ -34,6 +37,8 @@ These cause crashes, install failures, or silent data loss. Flag any of these pa
 - **Permission denied**: `READ_EXTERNAL_STORAGE` replaced by `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_AUDIO`
 - **DataWedge**: dynamic `registerReceiver()` must pass `RECEIVER_NOT_EXPORTED` flag on API 33+
 - **Silent failure**: `BluetoothAdapter.enable()`/`disable()` always return `false` on API 33+ targets — prompt user via `ACTION_REQUEST_ENABLE` instead
+- **Deprecation**: `getParcelableExtra(key)` and `getSerializableExtra(key)` — use typed variants `getParcelableExtra(key, Class)` / `getSerializableExtra(key, Class)`
+- **Deprecation**: `android:sharedUserId` — add `android:sharedUserMaxSdkVersion="32"` if still in use; plan migration to `FileProvider` or content providers
 
 ### API 34 (Android 14)
 - **Runtime crash**: foreground service with no `foregroundServiceType` declared in manifest

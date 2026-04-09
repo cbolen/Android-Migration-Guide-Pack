@@ -243,54 +243,93 @@ Run the full migration non-interactively using the `-p` flag. Create `migrate.sh
 #!/bin/bash
 set -e
 
+# Usage:
+#   ./migrate.sh            — apply all phases
+#   ./migrate.sh --dry-run  — print what would run, make no changes
+
+DRY_RUN=false
+[[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
+
+LOG="migrate.log"
+: > "$LOG"
+
+log() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
+run_phase() {
+  local label="$1" prompt="$2"
+  log "=== $label ==="
+  if $DRY_RUN; then
+    log "DRY RUN — would run: claude -p \"${prompt:0:80}...\" --allowedTools Edit,Read,Glob,Grep"
+  else
+    claude -p "$prompt" --allowedTools Edit,Read,Glob,Grep 2>&1 | tee -a "$LOG"
+    log "$label complete"
+  fi
+  echo "" >> "$LOG"
+}
+
+log "migrate.sh — Android API 35 migration"
+log "Mode: $( $DRY_RUN && echo 'DRY RUN' || echo 'LIVE' )"
+log "============================================="
+
 # Run Phase 0 manually in Claude Code first to understand scope before running this script.
 
-echo "=== Phase 1: android:exported ==="
-claude -p "Refer to docs/migration/migration-guide.md for guidance. Scan AndroidManifest.xml and add android:exported to every activity, service, receiver, and provider that has an intent-filter but is missing the attribute. Use false for internal components, true only for components that must accept external intents." --allowedTools Edit,Read,Glob,Grep
+run_phase "Phase 1: android:exported" \
+  "Refer to docs/migration/migration-guide.md for guidance. Scan AndroidManifest.xml and add android:exported to every activity, service, receiver, and provider that has an intent-filter but is missing the attribute. Use false for internal components, true only for components that must accept external intents."
 
-echo "=== Phase 2: PendingIntent FLAG_IMMUTABLE ==="
-claude -p "Refer to docs/migration/migration-guide.md for guidance. Find all PendingIntent.getActivity, getBroadcast, and getService calls missing FLAG_IMMUTABLE and add it. Only use FLAG_MUTABLE where genuinely required." --allowedTools Edit,Read,Glob,Grep
+run_phase "Phase 2: PendingIntent FLAG_IMMUTABLE" \
+  "Refer to docs/migration/migration-guide.md for guidance. Find all PendingIntent.getActivity, getBroadcast, and getService calls missing FLAG_IMMUTABLE and add it. Only use FLAG_MUTABLE where genuinely required."
 
-echo "=== Phase 3: Activity Results ==="
-claude -p "Refer to docs/migration/migration-guide.md for guidance. Replace all startActivityForResult and onActivityResult usage with registerForActivityResult using ActivityResultContracts. Keep existing business logic." --allowedTools Edit,Read,Glob,Grep
+run_phase "Phase 3: Activity Results" \
+  "Refer to docs/migration/migration-guide.md for guidance. Replace all startActivityForResult and onActivityResult usage with registerForActivityResult using ActivityResultContracts. Keep existing business logic."
 
-echo "=== Phase 4: Permission Results ==="
-claude -p "Refer to docs/migration/migration-guide.md for guidance. Replace all onRequestPermissionsResult overrides with registerForActivityResult using ActivityResultContracts.RequestPermission or RequestMultiplePermissions." --allowedTools Edit,Read,Glob,Grep
+run_phase "Phase 4: Permission Results" \
+  "Refer to docs/migration/migration-guide.md for guidance. Replace all onRequestPermissionsResult overrides with registerForActivityResult using ActivityResultContracts.RequestPermission or RequestMultiplePermissions."
 
-echo "=== Phase 5: Storage paths ==="
-claude -p "Refer to docs/migration/migration-guide.md for guidance. Find and replace hardcoded external storage paths and Environment.getExternalStorageDirectory() usage. Migrate to getExternalFilesDir() for app-private files and MediaStore for shared media." --allowedTools Edit,Read,Glob,Grep
+run_phase "Phase 5: Storage paths" \
+  "Refer to docs/migration/migration-guide.md for guidance. Find and replace hardcoded external storage paths and Environment.getExternalStorageDirectory() usage. Migrate to getExternalFilesDir() for app-private files and MediaStore for shared media."
 
-echo "=== Phase 6: AsyncTask ==="
-claude -p "Refer to docs/migration/migration-guide.md for guidance. Replace all AsyncTask subclasses with Kotlin coroutines using viewModelScope or lifecycleScope. Move IO work to Dispatchers.IO." --allowedTools Edit,Read,Glob,Grep
+run_phase "Phase 6: AsyncTask" \
+  "Refer to docs/migration/migration-guide.md for guidance. Replace all AsyncTask subclasses with Kotlin coroutines using viewModelScope or lifecycleScope. Move IO work to Dispatchers.IO."
 
-echo "=== Phase 7: POST_NOTIFICATIONS ==="
-claude -p "Refer to docs/migration/migration-guide.md for guidance. Add POST_NOTIFICATIONS permission check before all NotificationManager.notify() calls. Add the permission to AndroidManifest.xml." --allowedTools Edit,Read,Glob,Grep
+run_phase "Phase 7: POST_NOTIFICATIONS" \
+  "Refer to docs/migration/migration-guide.md for guidance. Add POST_NOTIFICATIONS permission check before all NotificationManager.notify() calls. Add the permission to AndroidManifest.xml."
 
-echo "=== Phase 8: Back navigation ==="
-claude -p "Refer to docs/migration/migration-guide.md for guidance. Replace all onBackPressed() overrides with OnBackPressedCallback registered via onBackPressedDispatcher.addCallback()." --allowedTools Edit,Read,Glob,Grep
+run_phase "Phase 8: Back navigation" \
+  "Refer to docs/migration/migration-guide.md for guidance. Replace all onBackPressed() overrides with OnBackPressedCallback registered via onBackPressedDispatcher.addCallback()."
 
-echo "=== Phase 9: Edge-to-edge insets ==="
-claude -p "Refer to docs/migration/migration-guide.md for guidance. Add WindowInsetsCompat inset handling to all activities so content is not obscured by system bars. Required for targetSdk 35." --allowedTools Edit,Read,Glob,Grep
+run_phase "Phase 9: Edge-to-edge insets" \
+  "Refer to docs/migration/migration-guide.md for guidance. Add WindowInsetsCompat inset handling to all activities so content is not obscured by system bars. Required for targetSdk 35."
 
-echo "=== Phase 10: Splash screen ==="
-claude -p "Refer to docs/migration/migration-guide.md for guidance. Remove custom SplashActivity and replace with androidx.core:core-splashscreen. Add the dependency, update the theme, and call installSplashScreen() in MainActivity." --allowedTools Edit,Read,Glob,Grep
+run_phase "Phase 10: Splash screen" \
+  "Refer to docs/migration/migration-guide.md for guidance. Remove custom SplashActivity and replace with androidx.core:core-splashscreen. Add the dependency, update the theme, and call installSplashScreen() in MainActivity."
 
-echo "=== Phase 11: DataWedge receiver flag ==="
-claude -p "Refer to docs/migration/migration-guide.md for guidance. Update all registerReceiver calls for DataWedge scan receivers to pass RECEIVER_NOT_EXPORTED on API 33+ with a Build.VERSION.SDK_INT check." --allowedTools Edit,Read,Glob,Grep
+run_phase "Phase 11: DataWedge receiver flag" \
+  "Refer to docs/migration/migration-guide.md for guidance. Update all registerReceiver calls for DataWedge scan receivers to pass RECEIVER_NOT_EXPORTED on API 33+ with a Build.VERSION.SDK_INT check."
 
-echo "=== Phase 12: Build target ==="
-claude -p "Refer to docs/migration/migration-guide.md for guidance. Update build.gradle to compileSdk 35, targetSdk 35, minSdk 30. Add any Jetpack dependencies required by the changes made in previous phases." --allowedTools Edit,Read,Glob,Grep
+run_phase "Phase 12: Build target" \
+  "Refer to docs/migration/migration-guide.md for guidance. Update build.gradle to compileSdk 35, targetSdk 35, minSdk 30. Add any Jetpack dependencies required by the changes made in previous phases."
 
-echo "=== Migration complete — review changes with: git diff ==="
+log "============================================="
+log "Migration complete. Full log: $LOG"
+$DRY_RUN && log "Dry run — no changes were made."
 ```
 
 Run it on a clean branch:
 
 ```bash
 git checkout -b migrate/android-15
-chmod +x migrate.sh && ./migrate.sh
+chmod +x migrate.sh
+
+# Preview what will run without making changes
+./migrate.sh --dry-run
+
+# Run for real
+./migrate.sh
+
+# Review all changes before committing
 git diff
 ```
+
+The script logs all output to `migrate.log` in your project root. Review it alongside `git diff` to understand what changed and what may need manual attention.
 
 ---
 

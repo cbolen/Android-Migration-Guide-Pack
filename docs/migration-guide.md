@@ -201,6 +201,31 @@ val request = OneTimeWorkRequestBuilder<MyWorker>()
 WorkManager.getInstance(context).enqueue(request)
 ```
 
+**`MediaRecorder()` no-arg constructor removed**
+
+```kotlin
+// Broken on API 31+
+val recorder = MediaRecorder()
+
+// Correct
+val recorder = MediaRecorder(context)
+```
+
+**`ACTION_CLOSE_SYSTEM_DIALOGS` blocked**
+
+Apps targeting API 31+ that broadcast `ACTION_CLOSE_SYSTEM_DIALOGS` receive a `SecurityException`. Remove any usage — this was commonly used in kiosk and enterprise apps to dismiss dialogs programmatically.
+
+**GCM cipher requires exactly 12-byte IV**
+
+AES/GCM encryption on API 31+ enforces a 12-byte (96-bit) IV. Passing any other length throws `InvalidAlgorithmParameterException`.
+
+```kotlin
+// Correct — always use exactly 12 bytes for GCM IV
+val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
+val spec = GCMParameterSpec(128, iv)
+cipher.init(Cipher.ENCRYPT_MODE, secretKey, spec)
+```
+
 **BouncyCastle cryptography implementations removed**
 
 Android 12 removes the BouncyCastle implementations of many cryptographic algorithms that were previously deprecated. If your app (or any third-party library it uses) directly references `org.bouncycastle.*` classes or uses algorithms like `PBKDF2WithHmacSHA1` via a named provider, it will throw `NoSuchAlgorithmException` or `NoSuchProviderException` at runtime.
@@ -297,6 +322,40 @@ onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
     }
 })
 ```
+
+**`getParcelableExtra()` and `getSerializableExtra()` require type parameter**
+
+The untyped variants are deprecated on API 33 and produce a warning that becomes a lint error on later targets. Use the typed versions everywhere.
+
+```kotlin
+// Before — untyped, deprecated API 33
+val item = intent.getParcelableExtra<ScanItem>("item")
+val config = intent.getSerializableExtra("config") as? Config
+
+// After — typed, required on API 33+
+val item = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+    intent.getParcelableExtra("item", ScanItem::class.java)
+else
+    @Suppress("DEPRECATION") intent.getParcelableExtra("item")
+
+val config = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+    intent.getSerializableExtra("config", Config::class.java)
+else
+    @Suppress("DEPRECATION") intent.getSerializableExtra("config") as? Config
+```
+
+**`android:sharedUserId` deprecated**
+
+Apps targeting API 33 that declare `android:sharedUserId` in the manifest should also add `android:sharedUserMaxSdkVersion="32"` to suppress the deprecation warning and signal intent to migrate.
+
+```xml
+<!-- Suppress deprecation warning while you plan migration away from sharedUserId -->
+<manifest
+    android:sharedUserId="com.mycompany.shared"
+    android:sharedUserMaxSdkVersion="32">
+```
+
+If your enterprise apps share a UID for file/data sharing, evaluate whether `FileProvider`, content providers, or Zebra SSM can replace the shared UID dependency before a future Android release removes it.
 
 **`BluetoothAdapter.enable()` and `disable()` always return `false`**
 
