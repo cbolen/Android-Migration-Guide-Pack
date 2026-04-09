@@ -1,6 +1,6 @@
 # Zebra Android Migration — AI Developer Pack
 
-Guidance and context files to help developers port Android apps to Android 11–15 using AI coding assistants (Claude, Cursor, GitHub Copilot, ChatGPT, Gemini, etc.).
+Context files and migration prompts to help developers port Android apps to Android 11–15 using AI coding assistants (Claude Code, Cursor, GitHub Copilot, ChatGPT, Gemini).
 
 ## What's Included
 
@@ -8,62 +8,283 @@ Guidance and context files to help developers port Android apps to Android 11–
 |---|---|
 | `CLAUDE.md` | Drop in project root — Claude Code loads it automatically |
 | `.cursorrules` | Drop in project root — Cursor loads it automatically |
-| `docs/migration-guide.md` | Full A11–A15 migration reference |
-| `docs/toolchain-upgrade.md` | JDK → Gradle → AGP upgrade guide (prerequisite before targetSdk bumps) |
-| `docs/system-prompt.md` | Paste into any AI chat tool as first message |
+| `docs/migration-guide.md` | Full A11–A15 migration reference with Kotlin examples |
+| `docs/toolchain-upgrade.md` | Prerequisite: JDK → Gradle → AGP upgrade guide |
 | `docs/datawedge-intents-ref.md` | DataWedge Intent API quick reference |
+| `docs/system-prompt.md` | Context file to paste into AI chat tools (ChatGPT, Gemini, Claude.ai) |
 | `examples/` | Vetted Kotlin boilerplate for common Zebra patterns |
-| `examples/example-migration-plan.md` | Example AI-generated migration plan (Phase 0 output) |
+| `examples/example-migration-plan.md` | Sample Phase 0 output — shows what AI analysis looks like |
 
-## Quick Start by Tool
+---
 
-### Claude Code (CLI or IDE extension)
-1. Copy `CLAUDE.md` to your project root
-2. Open Claude Code in your project — Zebra context loads automatically
+## Step 1 — Get the Files
 
-### Cursor
-1. Copy `.cursorrules` to your project root
-2. Cursor AI now has Zebra context for all suggestions
+```bash
+git clone https://github.com/cbolen/android-migration-guide-pack.git
+```
 
-### GitHub Copilot
-1. Copy contents of `CLAUDE.md` into `.github/copilot-instructions.md` in your repo
+Or download the ZIP from the Releases page.
 
-### ChatGPT / Gemini / Any AI Chat
-1. Open `docs/system-prompt.md`
-2. Paste the full contents as your first message
-3. Then paste your code or describe your problem
+---
 
-### Claude.ai (browser)
-- Use the shared Zebra Migration Project link (see your Zebra DevRel contact)
-- Or paste `docs/system-prompt.md` as first message in a new chat
+## Step 2 — Add Context to Your AI Tool
 
-## Scope
+### IDE tools with project file access (Claude Code, Cursor, GitHub Copilot)
 
-This guide covers migration from **Android 11 (API 30) to Android 15 (API 35)**.
+Copy the context file into your Android project root — the AI picks it up automatically.
 
-Primary SDKs covered:
-- **DataWedge** — recommended for all barcode scanning (intent-based, no scanner code in app)
-- **Zebra AI Suite** — A14+ only, advanced data capture (AI barcode, OCR, shelf recognition)
-- **EMDK** — direct hardware APIs for specialized scanner control
-- **Android Jetpack** — compatibility libraries
+| Tool | File to copy | Where |
+|---|---|---|
+| Claude Code | `CLAUDE.md` | Your Android project root |
+| Cursor | `.cursorrules` | Your Android project root |
+| GitHub Copilot | `CLAUDE.md` content | `.github/copilot-instructions.md` |
 
-## Notes
+```bash
+# Claude Code
+cp android-migration-guide-pack/CLAUDE.md /path/to/your/project/
 
-- DataWedge is the recommended scanning integration for all new development
-- Use Zebra AI Suite (A14+) for advanced data capture scenarios — AI barcode recognition, OCR, shelf analysis
-- EMDK is appropriate only when direct scanner control is required (custom decode params, serial/USB, payment hardware)
-- Zebra AI Suite was released with Android 14 — only relevant for A14+ scenarios
-- SSM (Secure Storage Manager) is not required for standard A11+ storage patterns; see `docs/migration-guide.md` for when it applies
+# Cursor
+cp android-migration-guide-pack/.cursorrules /path/to/your/project/
+
+# GitHub Copilot
+mkdir -p /path/to/your/project/.github
+cp android-migration-guide-pack/CLAUDE.md /path/to/your/project/.github/copilot-instructions.md
+```
+
+Also copy the reference docs so the AI can read them directly from your project:
+
+```bash
+mkdir -p /path/to/your/project/docs/migration
+cp android-migration-guide-pack/docs/migration-guide.md /path/to/your/project/docs/migration/
+cp android-migration-guide-pack/docs/datawedge-intents-ref.md /path/to/your/project/docs/migration/
+```
+
+### AI chat tools (ChatGPT, Gemini, Claude.ai)
+
+Open `docs/system-prompt.md` and paste the full contents as your first message, then paste your `AndroidManifest.xml`, `build.gradle`, and any source files you want help with.
+
+---
+
+## Step 3 — Run the Migration Prompts
+
+Work through the phases below in order. **Start with Phase 0** — it makes no code changes and produces a prioritized list of everything that needs fixing so you know the full scope before starting.
+
+> **Prerequisite:** If your project is on AGP 4.x or 7.x, complete the toolchain upgrade first (`docs/toolchain-upgrade.md`) before running any targetSdk migration phases.
+
+### Phase 0 — Discovery: Full Project Audit
+
+Run this first. No changes — audit only.
+
+```
+Read CLAUDE.md for Zebra platform rules and docs/migration/migration-guide.md for the
+full A11–A15 change reference.
+
+Scan this entire Android project — AndroidManifest.xml, all Kotlin/Java source files,
+build.gradle / build.gradle.kts, and libs.versions.toml if present.
+
+Produce a migration plan with the following sections:
+1. BLOCKING ISSUES (install failure or runtime crash) — file, line, API level, fix needed
+2. REQUIRED CHANGES (silent failure or permission denied) — file, line, API level, fix needed
+3. ZEBRA-SPECIFIC ISSUES — DataWedge receiver flags, EMDK lifecycle, storage patterns
+4. SUGGESTED PHASE ORDER — which phases apply to this project and in what order
+
+Do not make any changes. Output the plan only.
+```
+
+> **Chat tools:** Replace the first paragraph with: "I have pasted the Zebra migration context and my project files above."
+
+Review the output and confirm scope before proceeding.
+
+---
+
+### Phase 1 — Manifest: android:exported
+
+```
+Scan AndroidManifest.xml and find every <activity>, <service>, <receiver>, and <provider>
+that has an <intent-filter> but is missing android:exported.
+Add android:exported="false" to internal components and android:exported="true" only
+to components that must receive intents from other apps or the system (e.g. launcher
+activities, share targets, system broadcast receivers). Show me the list before making changes.
+```
+
+### Phase 2 — PendingIntent flags
+
+```
+Find all PendingIntent.getActivity(), PendingIntent.getBroadcast(), and
+PendingIntent.getService() calls in this project. Add FLAG_IMMUTABLE to every one that
+doesn't already have it. Only use FLAG_MUTABLE if the PendingIntent is used with
+AlarmManager.setExact() or a notification with inline reply — explain any MUTABLE cases
+before changing them.
+```
+
+### Phase 3 — Activity Results
+
+```
+Replace all startActivityForResult() and onActivityResult() patterns in this project
+with the registerForActivityResult() API using ActivityResultContracts.
+Keep the same business logic — only change the API pattern.
+```
+
+### Phase 4 — Permission Results
+
+```
+Replace all onRequestPermissionsResult() overrides with registerForActivityResult()
+using ActivityResultContracts.RequestPermission or RequestMultiplePermissions.
+Update the permission request call sites to match.
+```
+
+### Phase 5 — Storage paths
+
+```
+Find every place this project writes or reads files using hardcoded paths
+(/sdcard/, /storage/emulated/0/, Environment.getExternalStorageDirectory()).
+Migrate app-private files to getExternalFilesDir().
+Migrate files that should be visible in Downloads or shared media to MediaStore.
+Do not use MANAGE_EXTERNAL_STORAGE.
+```
+
+### Phase 6 — AsyncTask
+
+```
+Replace all AsyncTask subclasses in this project with Kotlin coroutines.
+Use viewModelScope or lifecycleScope as appropriate.
+Move background work to Dispatchers.IO and UI updates to Dispatchers.Main.
+Keep the same data flow and error handling logic.
+```
+
+### Phase 7 — POST_NOTIFICATIONS permission
+
+```
+Find all places this project shows notifications via NotificationManager.notify().
+Add a POST_NOTIFICATIONS runtime permission check before every notify() call
+(required on API 33+). Use ActivityResultContracts.RequestPermission to request it.
+Also check that PendingIntent flags are FLAG_IMMUTABLE on all notification actions.
+```
+
+### Phase 8 — Back navigation
+
+```
+Replace all override fun onBackPressed() implementations with OnBackPressedCallback
+registered via onBackPressedDispatcher.addCallback().
+Preserve the existing back navigation logic inside the callback's handleOnBackPressed().
+```
+
+### Phase 9 — Edge-to-edge insets
+
+```
+Add WindowInsetsCompat handling to all activities in this project.
+Apply window insets to the root view or scrollable container so content is not
+obscured by the status bar or navigation bar. Use ViewCompat.setOnApplyWindowInsetsListener.
+This is required when targeting API 35.
+```
+
+### Phase 10 — Splash screen
+
+```
+Remove the custom SplashActivity and replace it with the androidx.core:core-splashscreen
+library. Add the dependency to build.gradle, add the Theme.SplashScreen parent to the
+app theme in styles.xml, and call installSplashScreen() in MainActivity.onCreate()
+before setContentView.
+```
+
+### Phase 11 — DataWedge receiver registration (API 33+)
+
+```
+Find all dynamic registerReceiver() calls for DataWedge scan receivers in this project.
+Update them to pass RECEIVER_NOT_EXPORTED as the export flag when running on API 33+,
+using a Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU check.
+DataWedge broadcasts come from a system service and do not require RECEIVER_EXPORTED.
+```
+
+### Phase 12 — Build target
+
+```
+Update app/build.gradle (or build.gradle.kts):
+- compileSdk 35
+- targetSdk 35
+- minSdk 30 (or confirm with me if a lower minimum is required)
+Add any missing Jetpack dependencies needed for the changes made in earlier phases
+(activity-ktx, core-splashscreen, etc.).
+```
+
+---
+
+## Automate with Claude Code
+
+Run the full migration non-interactively using the `-p` flag. Create `migrate.sh` in your Android project root:
+
+```bash
+#!/bin/bash
+set -e
+
+# Run Phase 0 manually in Claude Code first to understand scope before running this script.
+
+echo "=== Phase 1: android:exported ==="
+claude -p "Scan AndroidManifest.xml and add android:exported to every activity, service, receiver, and provider that has an intent-filter but is missing the attribute. Use false for internal components, true only for components that must accept external intents." --allowedTools Edit,Read,Glob,Grep
+
+echo "=== Phase 2: PendingIntent FLAG_IMMUTABLE ==="
+claude -p "Find all PendingIntent.getActivity, getBroadcast, and getService calls missing FLAG_IMMUTABLE and add it. Only use FLAG_MUTABLE where genuinely required." --allowedTools Edit,Read,Glob,Grep
+
+echo "=== Phase 3: Activity Results ==="
+claude -p "Replace all startActivityForResult and onActivityResult usage with registerForActivityResult using ActivityResultContracts. Keep existing business logic." --allowedTools Edit,Read,Glob,Grep
+
+echo "=== Phase 4: Permission Results ==="
+claude -p "Replace all onRequestPermissionsResult overrides with registerForActivityResult using ActivityResultContracts.RequestPermission or RequestMultiplePermissions." --allowedTools Edit,Read,Glob,Grep
+
+echo "=== Phase 5: Storage paths ==="
+claude -p "Find and replace hardcoded external storage paths and Environment.getExternalStorageDirectory() usage. Migrate to getExternalFilesDir() for app-private files and MediaStore for shared media." --allowedTools Edit,Read,Glob,Grep
+
+echo "=== Phase 6: AsyncTask ==="
+claude -p "Replace all AsyncTask subclasses with Kotlin coroutines using viewModelScope or lifecycleScope. Move IO work to Dispatchers.IO." --allowedTools Edit,Read,Glob,Grep
+
+echo "=== Phase 7: POST_NOTIFICATIONS ==="
+claude -p "Add POST_NOTIFICATIONS permission check before all NotificationManager.notify() calls. Add the permission to AndroidManifest.xml." --allowedTools Edit,Read,Glob,Grep
+
+echo "=== Phase 8: Back navigation ==="
+claude -p "Replace all onBackPressed() overrides with OnBackPressedCallback registered via onBackPressedDispatcher.addCallback()." --allowedTools Edit,Read,Glob,Grep
+
+echo "=== Phase 9: Edge-to-edge insets ==="
+claude -p "Add WindowInsetsCompat inset handling to all activities so content is not obscured by system bars. Required for targetSdk 35." --allowedTools Edit,Read,Glob,Grep
+
+echo "=== Phase 10: Splash screen ==="
+claude -p "Remove custom SplashActivity and replace with androidx.core:core-splashscreen. Add the dependency, update the theme, and call installSplashScreen() in MainActivity." --allowedTools Edit,Read,Glob,Grep
+
+echo "=== Phase 11: DataWedge receiver flag ==="
+claude -p "Update all registerReceiver calls for DataWedge scan receivers to pass RECEIVER_NOT_EXPORTED on API 33+ with a Build.VERSION.SDK_INT check." --allowedTools Edit,Read,Glob,Grep
+
+echo "=== Phase 12: Build target ==="
+claude -p "Update build.gradle to compileSdk 35, targetSdk 35, minSdk 30. Add any Jetpack dependencies required by the changes made in previous phases." --allowedTools Edit,Read,Glob,Grep
+
+echo "=== Migration complete — review changes with: git diff ==="
+```
+
+Run it on a clean branch:
+
+```bash
+git checkout -b migrate/android-15
+chmod +x migrate.sh && ./migrate.sh
+git diff
+```
+
+---
 
 ## Practice App
 
-**[android-migration-sample](https://github.com/cbolen/android-migration-sample)** — A legacy inventory app intentionally written with API 30 patterns (AsyncTask, startActivityForResult, hardcoded storage paths, missing exported flags, etc.). Use it as a safe sandbox to practice applying this guide with your AI tool of choice before touching production code.
+**[android-migration-sample](https://github.com/cbolen/android-migration-sample)** — A legacy inventory app with intentional API 30-era anti-patterns. Safe sandbox for practising the guide before touching production code.
 
-**[examples/example-migration-plan.md](examples/example-migration-plan.md)** — The Phase 0 migration plan produced by running the discovery prompt against the sample app. Shows what AI-assisted analysis output looks like in practice. Note: this app was constructed to contain almost every possible migration issue at once — a real app will typically have a much smaller subset.
+**[examples/example-migration-plan.md](examples/example-migration-plan.md)** — The Phase 0 output from running the discovery prompt against the sample app. Shows what AI analysis looks like in practice. Note: the sample app was built to contain almost every possible issue — a real app will typically have a much smaller subset.
 
-## Automating the Migration
+---
 
-See **[docs/how-to-use.md](docs/how-to-use.md)** for step-by-step instructions on adding these files to your own project and running AI-assisted migration phase by phase, including a `migrate.sh` script for Claude Code users.
+## Reference Docs
+
+| Doc | When to use |
+|---|---|
+| `docs/toolchain-upgrade.md` | **Start here** if on AGP 4.x or 7.x — upgrade JDK/Gradle/AGP before migrating targetSdk |
+| `docs/migration-guide.md` | Full technical reference for all A11–A15 breaking changes with Kotlin examples |
+| `docs/datawedge-intents-ref.md` | DataWedge Intent API quick reference |
+
+---
 
 ## Support
 
