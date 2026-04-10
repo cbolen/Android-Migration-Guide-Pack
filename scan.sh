@@ -200,10 +200,35 @@ scan_src_verify 'PendingIntent\.(getActivity|getBroadcast|getService|getForegrou
   "PendingIntent calls — confirm FLAG_IMMUTABLE or FLAG_MUTABLE on every call (runtime crash if missing)"
 scan_src 'Cipher\.getInstance.*"BC"' \
   "BouncyCastle provider — removed API 31, use default provider"
-scan_src_verify 'setExactAndAllowWhileIdle|setAlarmClock|\.setExact\(' \
-  "Exact alarm — confirm SCHEDULE_EXACT_ALARM permission + canScheduleExactAlarms() guard is present"
-scan_manifest_verify 'SCHEDULE_EXACT_ALARM|USE_EXACT_ALARM' \
-  "Exact alarm permission declared in manifest — confirm canScheduleExactAlarms() guard is in code"
+
+# Notification trampoline: BroadcastReceiver subclass that calls startActivity()
+_receiver_files=$(grep -rln --include='*.java' --include='*.kt' -E ':\s*BroadcastReceiver|extends BroadcastReceiver' "$ROOT/app/src" 2>/dev/null || true)
+_trampoline_files=""
+if [[ -n "$_receiver_files" ]]; then
+  while IFS= read -r _f; do
+    grep -qE 'startActivity\(' "$_f" 2>/dev/null && _trampoline_files="${_trampoline_files}${_f}\n"
+  done <<< "$_receiver_files"
+fi
+if [[ -n "$_trampoline_files" ]]; then
+  found "Notification trampoline — BroadcastReceiver calls startActivity() (blocked API 31+; attach PendingIntent directly to notification)"
+  printf '%b' "$_trampoline_files" | while IFS= read -r _f; do [[ -n "$_f" ]] && log "             $_f"; done
+else
+  ok "Notification trampoline — no BroadcastReceiver calls startActivity()"
+fi
+
+# Exact alarm: [FOUND] if code uses it but permission is missing; [VERIFY] if permission is present
+_exact_hits=$(grep -rn --include='*.java' --include='*.kt' -E 'setExactAndAllowWhileIdle|setAlarmClock|\.setExact\(' "$ROOT/app/src" 2>/dev/null || true)
+if [[ -n "$_exact_hits" ]]; then
+  if [[ -f "$MANIFEST" ]] && ! grep -qE 'SCHEDULE_EXACT_ALARM|USE_EXACT_ALARM' "$MANIFEST" 2>/dev/null; then
+    found "Exact alarm used but SCHEDULE_EXACT_ALARM missing from manifest (SecurityException on API 31+)"
+    echo "$_exact_hits" | while IFS= read -r line; do log "             $line"; done
+  else
+    verify "Exact alarm — permission declared; confirm canScheduleExactAlarms() guard is in code"
+    echo "$_exact_hits" | while IFS= read -r line; do log "             $line"; done
+  fi
+else
+  ok "Exact alarm — no setExact* calls found"
+fi
 scan_src 'ACTION_CLOSE_SYSTEM_DIALOGS' \
   "ACTION_CLOSE_SYSTEM_DIALOGS — throws SecurityException on API 31+"
 scan_src 'MediaRecorder\(\)' \
@@ -224,8 +249,19 @@ scan_src 'getParcelableExtra\("[^"]*"\)' \
   "getParcelableExtra(key) untyped — use getParcelableExtra(key, Class) on API 33+"
 scan_src 'getSerializableExtra\("[^"]*"\)' \
   "getSerializableExtra(key) untyped — use getSerializableExtra(key, Class) on API 33+"
-scan_manifest_verify 'POST_NOTIFICATIONS' \
-  "POST_NOTIFICATIONS in manifest — confirm runtime permission request is present in code"
+# POST_NOTIFICATIONS: [FOUND] if NotificationManager is used but permission is missing
+_notify_files=$(grep -rln --include='*.java' --include='*.kt' -E 'NotificationManager' "$ROOT/app/src" 2>/dev/null || true)
+if [[ -n "$_notify_files" ]]; then
+  if [[ -f "$MANIFEST" ]] && ! grep -qE 'POST_NOTIFICATIONS' "$MANIFEST" 2>/dev/null; then
+    found "Notifications used but POST_NOTIFICATIONS missing from manifest (silently dropped on API 33+)"
+    echo "$_notify_files" | while IFS= read -r _f; do log "             $_f"; done
+  else
+    verify "POST_NOTIFICATIONS declared in manifest — confirm runtime permission request is in code"
+    grep -n 'POST_NOTIFICATIONS' "$MANIFEST" 2>/dev/null | while IFS= read -r line; do log "             AndroidManifest.xml:$line"; done
+  fi
+else
+  ok "POST_NOTIFICATIONS — no NotificationManager usage found"
+fi
 scan_manifest_verify 'READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE' \
   "Legacy storage permissions — confirm guarded with maxSdkVersion or replaced with READ_MEDIA_* on API 33+"
 
