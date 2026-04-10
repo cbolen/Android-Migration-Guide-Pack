@@ -4,6 +4,8 @@ Context files and migration prompts to help developers port Android apps to Andr
 
 > **Caution:** This pack uses AI to assist with migration analysis and code changes. AI suggestions can contain errors, miss edge cases, or produce code that compiles but behaves incorrectly. Always review every change before committing, test on real devices at each API level, and consult the official [Android API documentation](https://developer.android.com/about/versions) and [Zebra TechDocs](https://techdocs.zebra.com) when in doubt. This pack is a productivity aid, not a substitute for developer judgment.
 
+> **What this pack can and cannot do:** `scan.sh` and the AI migration prompts reliably cover the well-known, pattern-detectable changes — exported flags, PendingIntent flags, deprecated APIs, permission changes. They will not catch everything. Patterns that span multiple files (e.g. notification trampolines), issues inside third-party libraries, behavioural changes with no code signature (TLS endpoint versions, audio focus, text rendering), and Zebra-specific runtime behaviour (DataWedge profile association, EMDK binding) can only be verified by running on a real device at each API level. The testing checklist in `docs/migration-guide.md` covers what automated scanning cannot reach.
+
 ## What's Included
 
 | File | Purpose |
@@ -246,10 +248,11 @@ The recommended flow is three steps: scan, fix, verify.
 Copy `scan.sh` to your Android project root and run it:
 
 ```bash
-bash scan.sh
+bash scan.sh          # scan only — no changes
+bash scan.sh --fix    # apply mechanical fixes first, then scan remaining
 ```
 
-This scans for every known migration pattern and writes findings to `migrate.log`. No changes are made. Works regardless of which AI tool you use.
+This scans for every known migration pattern and writes findings to `migrate.log`. The `--fix` flag handles safe, deterministic changes automatically (SDK version bumps, `Handler()` no-arg, `jcenter()` removal, Gradle wrapper) before the AI runs. Works regardless of which AI tool you use.
 
 ### Step 2 — Fix
 
@@ -318,10 +321,13 @@ Run it on a clean branch:
 ```bash
 git checkout -b migrate/android-15
 
-# Step 1 — scan (no changes)
-bash scan.sh
+# Step 1 — apply mechanical fixes + scan remaining
+bash scan.sh --fix
 
-# Step 2 — fix
+# Review mechanical changes before AI runs
+git diff
+
+# Step 2 — AI handles the rest
 bash migrate.sh
 
 # Step 3 — verify (re-scan to catch anything missed)
