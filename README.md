@@ -14,6 +14,8 @@ Context files and migration prompts to help developers port Android apps to Andr
 | `docs/toolchain-upgrade.md` | Prerequisite: JDK → Gradle → AGP upgrade guide |
 | `docs/datawedge-intents-ref.md` | DataWedge Intent API quick reference |
 | `docs/system-prompt.md` | Context file to paste into AI chat tools (ChatGPT, Gemini, Claude.ai) |
+| `scan.sh` | Run in your project — scans for all migration patterns, writes findings to `migrate.log` |
+| `migrate.sh` | Run after scan.sh — feeds `migrate.log` to Claude Code to apply fixes |
 | `examples/` | Vetted Kotlin boilerplate for common Zebra patterns |
 | `examples/example-migration-plan.md` | Sample Phase 0 output — shows what AI analysis looks like |
 
@@ -235,101 +237,99 @@ Add any missing Jetpack dependencies needed for the changes made in earlier phas
 
 ---
 
-## Automate with Claude Code
+## Automate the Migration
 
-Run the full migration non-interactively using the `-p` flag. Create `migrate.sh` in your Android project root:
+The recommended flow is three steps: scan, fix, verify.
+
+### Step 1 — Scan (all tools)
+
+Copy `scan.sh` to your Android project root and run it:
+
+```bash
+bash scan.sh
+```
+
+This scans for every known migration pattern and writes findings to `migrate.log`. No changes are made. Works regardless of which AI tool you use.
+
+### Step 2 — Fix
+
+**IDE tools (Claude Code, Cursor, Copilot):** Copy `migrate.sh` to your project root and run it — it reads `migrate.log` and applies fixes automatically.
+
+**Chat tools (ChatGPT, Gemini, Claude.ai):** Paste `migrate.log` and `docs/migration-guide.md` into your chat, then send:
+
+```
+Read migrate.log for the list of items needing fixes in my project.
+Read migration-guide.md for guidance and Kotlin examples.
+Apply fixes for every [FOUND] item, one at a time. Commit after each fix.
+```
+
+### Step 3 — Verify
+
+Re-run `scan.sh` after the migration to catch anything that was missed:
+
+```bash
+bash scan.sh
+```
+
+Review the new `migrate.log` — any remaining `[FOUND]` items need manual attention.
+
+---
+
+### migrate.sh — Claude Code automation
+
+Copy `migrate.sh` to your Android project root and run it on a clean branch:
 
 ```bash
 #!/bin/bash
-set -e
-
+# ─────────────────────────────────────────────────────────────────────────────
+# migrate.sh — AI-assisted Android migration
+# Run scan.sh first to generate migrate.log before running this script.
+#
 # Usage:
-#   ./migrate.sh            — apply all phases
+#   ./migrate.sh            — apply fixes
 #   ./migrate.sh --dry-run  — print what would run, make no changes
+# ─────────────────────────────────────────────────────────────────────────────
+set -e
 
 DRY_RUN=false
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
 
-LOG="migrate.log"
-: > "$LOG"
+if [[ ! -f migrate.log ]]; then
+  echo "ERROR: migrate.log not found. Run scan.sh first."
+  exit 1
+fi
 
-log() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
-run_phase() {
-  local label="$1" prompt="$2"
-  log "=== $label ==="
-  if $DRY_RUN; then
-    log "DRY RUN — would run: claude -p \"${prompt:0:80}...\" --allowedTools Edit,Read,Glob,Grep"
-  else
-    claude -p "$prompt" --allowedTools Edit,Read,Glob,Grep 2>&1 | tee -a "$LOG"
-    log "$label complete"
-  fi
-  echo "" >> "$LOG"
-}
+if $DRY_RUN; then
+  echo "DRY RUN — would run:"
+  echo "  claude -p \"Read migrate.log and docs/migration/migration-guide.md..."
+  echo "  Apply fixes for every [FOUND] item, one at a time. Commit after each fix.\""
+  exit 0
+fi
 
-log "migrate.sh — Android API 35 migration"
-log "Mode: $( $DRY_RUN && echo 'DRY RUN' || echo 'LIVE' )"
-log "============================================="
-
-# Run Phase 0 manually in Claude Code first to understand scope before running this script.
-
-run_phase "Phase 1: android:exported" \
-  "Refer to docs/migration/migration-guide.md for guidance. Scan AndroidManifest.xml and add android:exported to every activity, service, receiver, and provider that has an intent-filter but is missing the attribute. Use false for internal components, true only for components that must accept external intents."
-
-run_phase "Phase 2: PendingIntent FLAG_IMMUTABLE" \
-  "Refer to docs/migration/migration-guide.md for guidance. Find all PendingIntent.getActivity, getBroadcast, and getService calls missing FLAG_IMMUTABLE and add it. Only use FLAG_MUTABLE where genuinely required."
-
-run_phase "Phase 3: Activity Results" \
-  "Refer to docs/migration/migration-guide.md for guidance. Replace all startActivityForResult and onActivityResult usage with registerForActivityResult using ActivityResultContracts. Keep existing business logic."
-
-run_phase "Phase 4: Permission Results" \
-  "Refer to docs/migration/migration-guide.md for guidance. Replace all onRequestPermissionsResult overrides with registerForActivityResult using ActivityResultContracts.RequestPermission or RequestMultiplePermissions."
-
-run_phase "Phase 5: Storage paths" \
-  "Refer to docs/migration/migration-guide.md for guidance. Find and replace hardcoded external storage paths and Environment.getExternalStorageDirectory() usage. Migrate to getExternalFilesDir() for app-private files and MediaStore for shared media."
-
-run_phase "Phase 6: AsyncTask" \
-  "Refer to docs/migration/migration-guide.md for guidance. Replace all AsyncTask subclasses with Kotlin coroutines using viewModelScope or lifecycleScope. Move IO work to Dispatchers.IO."
-
-run_phase "Phase 7: POST_NOTIFICATIONS" \
-  "Refer to docs/migration/migration-guide.md for guidance. Add POST_NOTIFICATIONS permission check before all NotificationManager.notify() calls. Add the permission to AndroidManifest.xml."
-
-run_phase "Phase 8: Back navigation" \
-  "Refer to docs/migration/migration-guide.md for guidance. Replace all onBackPressed() overrides with OnBackPressedCallback registered via onBackPressedDispatcher.addCallback()."
-
-run_phase "Phase 9: Edge-to-edge insets" \
-  "Refer to docs/migration/migration-guide.md for guidance. Add WindowInsetsCompat inset handling to all activities so content is not obscured by system bars. Required for targetSdk 35."
-
-run_phase "Phase 10: Splash screen" \
-  "Refer to docs/migration/migration-guide.md for guidance. Remove custom SplashActivity and replace with androidx.core:core-splashscreen. Add the dependency, update the theme, and call installSplashScreen() in MainActivity."
-
-run_phase "Phase 11: DataWedge receiver flag" \
-  "Refer to docs/migration/migration-guide.md for guidance. Update all registerReceiver calls for DataWedge scan receivers to pass RECEIVER_NOT_EXPORTED on API 33+ with a Build.VERSION.SDK_INT check."
-
-run_phase "Phase 12: Build target" \
-  "Refer to docs/migration/migration-guide.md for guidance. Update build.gradle to compileSdk 35, targetSdk 35, minSdk 30. Add any Jetpack dependencies required by the changes made in previous phases."
-
-log "============================================="
-log "Migration complete. Full log: $LOG"
-$DRY_RUN && log "Dry run — no changes were made."
+claude -p "Read migrate.log for the list of items needing fixes in this project. \
+Read docs/migration/migration-guide.md for guidance and Kotlin examples. \
+Apply fixes for every [FOUND] item in migrate.log, one at a time. \
+Commit after each fix." \
+--allowedTools Edit,Read,Glob,Grep,Bash
 ```
 
 Run it on a clean branch:
 
 ```bash
 git checkout -b migrate/android-15
-chmod +x migrate.sh
 
-# Preview what will run without making changes
-./migrate.sh --dry-run
+# Step 1 — scan (no changes)
+bash scan.sh
 
-# Run for real
-./migrate.sh
+# Step 2 — fix
+bash migrate.sh
 
-# Review all changes before committing
+# Step 3 — verify (re-scan to catch anything missed)
+bash scan.sh
+
+# Review all changes
 git diff
 ```
-
-The script logs all output to `migrate.log` in your project root. Review it alongside `git diff` to understand what changed and what may need manual attention.
 
 ---
 
