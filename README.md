@@ -104,18 +104,21 @@ Then run this prompt:
 Read CLAUDE.md for Zebra platform rules and docs/migration/migration-guide.md for the
 full A11–A15 change reference.
 
-Read migrate.log — it contains deterministic scan results and is the baseline for this audit.
+Read migrate.log — every [FOUND] item must appear in the plan. Every [VERIFY] item must
+also appear, with a note on whether the code confirms it is correctly implemented or not.
 
 Scan this entire Android project — AndroidManifest.xml, all Kotlin/Java source files,
-build.gradle / build.gradle.kts, and libs.versions.toml if present. Look especially for
-issues that pattern matching cannot detect: notification trampolines, missing permissions
-inferred from code context, cross-file interactions, and Zebra-specific runtime behaviour.
+build.gradle / build.gradle.kts, and libs.versions.toml if present. Add any issues you
+find that migrate.log did not detect, especially: notification trampolines, missing
+permissions inferred from code context, cross-file interactions, and Zebra-specific
+runtime behaviour.
 
 Produce a migration plan with the following sections:
 1. BLOCKING ISSUES (install failure or runtime crash) — file, line, API level, fix needed
 2. REQUIRED CHANGES (silent failure or permission denied) — file, line, API level, fix needed
 3. ZEBRA-SPECIFIC ISSUES — DataWedge receiver flags, EMDK lifecycle, storage patterns
 4. SUGGESTED PHASE ORDER — which phases apply to this project and in what order
+5. TESTING CHECKLIST — for each issue above, what to test, which API level or device, pass criteria
 
 Do not make any code changes. Write the migration plan to migration-plan.md in the project root.
 ```
