@@ -234,13 +234,23 @@ scan_src 'ACTION_CLOSE_SYSTEM_DIALOGS' \
 scan_src 'MediaRecorder\(\)' \
   "MediaRecorder() no-arg constructor — removed API 31, use MediaRecorder(context)"
 
-# Custom SplashActivity: API 31+ shows system splash before app launches; custom splash causes double-splash
-_splash=$(find "$ROOT/app/src" -name "SplashActivity.kt" -o -name "SplashActivity.java" 2>/dev/null | head -1)
+# Custom splash screen: activity with postDelayed/Thread.sleep + startActivity + finish() = timed splash pattern
+# API 31+ enforces system splash screen before app launches; custom splash causes double-splash
+_splash_files=$(grep -rln --include='*.kt' --include='*.java' -E 'postDelayed|Thread\.sleep' "$ROOT/app/src" 2>/dev/null || true)
+_splash=""
+if [[ -n "$_splash_files" ]]; then
+  while IFS= read -r _f; do
+    grep -qE 'startActivity\(' "$_f" 2>/dev/null && \
+    grep -qE 'finish\(\)' "$_f" 2>/dev/null && \
+    grep -qE 'AppCompatActivity|Activity' "$_f" 2>/dev/null && \
+    _splash="$_f" && break
+  done <<< "$_splash_files"
+fi
 if [[ -n "$_splash" ]]; then
-  found "Custom SplashActivity — migrate to androidx.core:core-splashscreen (API 31+ shows system splash before app; causes double-splash)"
+  found "Custom splash screen — migrate to androidx.core:core-splashscreen (API 31+ shows system splash before app; causes double-splash)"
   log "             $_splash"
 else
-  ok "SplashActivity — none found"
+  ok "Custom splash screen — none found"
 fi
 scan_src_verify 'GCMParameterSpec|AES/GCM' \
   "AES/GCM cipher — confirm exactly 12-byte IV is used (any other length throws on API 31)"
