@@ -233,6 +233,8 @@ scan_src 'ACTION_CLOSE_SYSTEM_DIALOGS' \
   "ACTION_CLOSE_SYSTEM_DIALOGS — throws SecurityException on API 31+"
 scan_src 'MediaRecorder\(\)' \
   "MediaRecorder() no-arg constructor — removed API 31, use MediaRecorder(context)"
+scan_manifest 'android\.permission\.BLUETOOTH"|android\.permission\.BLUETOOTH_ADMIN"' \
+  "Legacy Bluetooth permissions — replace BLUETOOTH/BLUETOOTH_ADMIN with BLUETOOTH_SCAN/BLUETOOTH_CONNECT/BLUETOOTH_ADVERTISE (API 31+)"
 
 # Custom splash screen: activity with postDelayed/Thread.sleep + startActivity + finish() = timed splash pattern
 # API 31+ enforces system splash screen before app launches; custom splash causes double-splash
@@ -283,14 +285,25 @@ else
 fi
 scan_manifest_verify 'READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE' \
   "Legacy storage permissions — confirm guarded with maxSdkVersion or replaced with READ_MEDIA_* on API 33+"
+scan_manifest 'android:sharedUserId' \
+  "android:sharedUserId — deprecated API 33; add android:sharedUserMaxSdkVersion=\"32\" and plan migration to FileProvider/content providers"
 
 # ── API 34 (Android 14) ───────────────────────────────────────────────────────
 log ""
 log "=== API 34 (Android 14) ==="
-scan_manifest_verify '<service' \
-  "Service declarations — confirm foregroundServiceType is set on each (runtime crash if missing)"
-scan_manifest_verify 'foregroundServiceType' \
-  "foregroundServiceType declared — confirm count matches service declarations above"
+# foregroundServiceType: [FOUND] if startForeground() used but type absent from manifest (runtime crash API 34+)
+_fg_hits=$(grep -rn --include='*.kt' --include='*.java' -E 'startForeground\(' "$ROOT/app/src" 2>/dev/null || true)
+if [[ -n "$_fg_hits" ]]; then
+  if [[ -f "$MANIFEST" ]] && ! grep -qE 'foregroundServiceType' "$MANIFEST" 2>/dev/null; then
+    found "startForeground() used but foregroundServiceType missing from manifest (runtime crash on API 34+)"
+    echo "$_fg_hits" | while IFS= read -r line; do log "             $line"; done
+  else
+    verify "foregroundServiceType declared — confirm type matches service usage"
+    grep -n 'foregroundServiceType' "$MANIFEST" 2>/dev/null | while IFS= read -r line; do log "             AndroidManifest.xml:$line"; done
+  fi
+else
+  ok "foregroundServiceType — no startForeground() calls found"
+fi
 scan_src_verify 'canScheduleExactAlarms' \
   "canScheduleExactAlarms() — confirm check is also present in onResume (auto-revoked on app update)"
 scan_src_verify 'DexClassLoader|PathClassLoader|InMemoryDexClassLoader' \
@@ -327,10 +340,22 @@ scan_manifest_verify 'MANAGE_EXTERNAL_STORAGE' \
 # ── Zebra-specific ────────────────────────────────────────────────────────────
 log ""
 log "=== ZEBRA-SPECIFIC ==="
-scan_src_verify 'com\.symbol\.datawedge|DataWedge|datawedge' \
-  "DataWedge usage — confirm receiver is registered with RECEIVER_NOT_EXPORTED on API 33+"
-scan_src_verify 'RECEIVER_NOT_EXPORTED|RECEIVER_EXPORTED' \
-  "DataWedge receiver export flag present — confirm applied to all DataWedge registerReceiver() calls"
+# DataWedge RECEIVER_NOT_EXPORTED: [FOUND] if DataWedge used with registerReceiver but flag absent
+_dw_files=$(grep -rln --include='*.kt' --include='*.java' -E 'com\.symbol\.datawedge|DataWedge' "$ROOT/app/src" 2>/dev/null || true)
+_dw_reg=$(grep -rln --include='*.kt' --include='*.java' -E 'registerReceiver' "$ROOT/app/src" 2>/dev/null || true)
+if [[ -n "$_dw_files" ]] && [[ -n "$_dw_reg" ]]; then
+  # Exclude comment-only lines so a TODO comment doesn't mask a missing flag
+  _dw_flag=$(grep -rn --include='*.kt' --include='*.java' -E 'RECEIVER_NOT_EXPORTED|RECEIVER_EXPORTED' "$ROOT/app/src" 2>/dev/null | grep -vE ':\s*//' || true)
+  if [[ -z "$_dw_flag" ]]; then
+    found "DataWedge registerReceiver() missing RECEIVER_NOT_EXPORTED flag (SecurityException on API 33+)"
+    echo "$_dw_reg" | while IFS= read -r _f; do log "             $_f"; done
+  else
+    verify "DataWedge receiver export flag present — confirm applied to all DataWedge registerReceiver() calls"
+    echo "$_dw_flag" | while IFS= read -r line; do log "             $line"; done
+  fi
+else
+  ok "DataWedge receiver — no DataWedge registerReceiver() usage found"
+fi
 scan_src_verify 'EMDKManager|EMDKResults|emdkManager' \
   "EMDK usage — confirm EMDKManager.release() is called in onPause/onDestroy"
 
