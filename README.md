@@ -117,7 +117,7 @@ Produce a migration plan with the following sections:
 3. ZEBRA-SPECIFIC ISSUES — DataWedge receiver flags, EMDK lifecycle, storage patterns
 4. SUGGESTED PHASE ORDER — which phases apply to this project and in what order
 
-Do not make any changes. Output the plan only.
+Do not make any code changes. Write the migration plan to migration-plan.md in the project root.
 ```
 
 > **Chat tools:** Run `scan.sh` locally, then paste `migrate.log`, your source files, and `docs/migration-guide.md` into the chat. Replace the first two paragraphs of the prompt with: "I have pasted the scan results and project files above."
