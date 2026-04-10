@@ -268,7 +268,17 @@ The `--fix` flag applies safe, deterministic changes automatically (SDK version 
 
 ### Step 2 — Fix
 
-**IDE tools (Claude Code, Cursor, Copilot):** Copy `migrate.sh` to your project root and run it — it reads `migrate.log` and applies fixes automatically.
+**IDE tools (Claude Code, Cursor, Copilot):** Copy `migrate.sh` to your project root. It reads `migrate.log` and applies fixes automatically.
+
+```bash
+git checkout -b migrate/android-15
+bash scan.sh --fix       # mechanical fixes + write migrate.log
+git diff                 # review mechanical changes before AI runs
+bash migrate.sh          # AI handles the rest
+git diff                 # review all changes
+```
+
+> **Optional sanity check:** Re-run `bash scan.sh` after the AI finishes. Any remaining `[FOUND]` items were missed and need manual attention.
 
 **Chat tools (ChatGPT, Gemini, Claude.ai):** Paste `migrate.log` and `docs/migration-guide.md` into your chat, then send:
 
@@ -276,33 +286,6 @@ The `--fix` flag applies safe, deterministic changes automatically (SDK version 
 Read migrate.log for the list of items needing fixes in my project.
 Read migration-guide.md for guidance and Kotlin examples.
 Apply fixes for every [FOUND] item, one at a time. Commit after each fix.
-```
-
-> **Optional sanity check:** Re-run `bash scan.sh` after the AI finishes. Any remaining `[FOUND]` items in the new `migrate.log` were missed and need manual attention.
-
----
-
-### migrate.sh — Claude Code automation
-
-Copy `migrate.sh` to your Android project root. Run it on a clean branch after `scan.sh --fix`:
-
-```bash
-git checkout -b migrate/android-15
-
-# Scan + apply mechanical fixes
-bash scan.sh --fix
-
-# Review mechanical changes before AI runs
-git diff
-
-# AI handles the rest
-bash migrate.sh
-
-# Review all changes
-git diff
-
-# Optional: re-scan to confirm nothing was missed
-bash scan.sh
 ```
 
 ---
