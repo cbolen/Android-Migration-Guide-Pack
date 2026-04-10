@@ -256,18 +256,15 @@ Add any missing Jetpack dependencies needed for the changes made in earlier phas
 
 > Use this instead of the manual phases above — not in addition to them. If automated fixes miss anything, run the manual phases for those specific items only.
 
-The flow is three steps: scan, fix, verify.
-
-### Step 1 — Scan (all tools)
+### Step 1 — Scan
 
 Copy `scan.sh` to your Android project root and run it:
 
 ```bash
-bash scan.sh          # scan only — no changes
-bash scan.sh --fix    # apply mechanical fixes first, then scan remaining
+bash scan.sh --fix    # apply mechanical fixes + write remaining items to migrate.log
 ```
 
-This scans for every known migration pattern and writes findings to `migrate.log`. The `--fix` flag handles safe, deterministic changes automatically (SDK version bumps, `Handler()` no-arg, `jcenter()` removal, Gradle wrapper) before the AI runs. Works regardless of which AI tool you use.
+The `--fix` flag applies safe, deterministic changes automatically (SDK version bumps, `Handler()` no-arg, `jcenter()` removal, Gradle wrapper) and writes everything else to `migrate.log` for the AI to handle. Works regardless of which AI tool you use.
 
 ### Step 2 — Fix
 
@@ -281,15 +278,7 @@ Read migration-guide.md for guidance and Kotlin examples.
 Apply fixes for every [FOUND] item, one at a time. Commit after each fix.
 ```
 
-### Step 3 — Verify
-
-Re-run `scan.sh` after the migration to catch anything that was missed:
-
-```bash
-bash scan.sh
-```
-
-Review the new `migrate.log` — any remaining `[FOUND]` items need manual attention.
+> **Optional sanity check:** Re-run `bash scan.sh` after the AI finishes. Any remaining `[FOUND]` items in the new `migrate.log` were missed and need manual attention.
 
 ---
 
@@ -336,20 +325,20 @@ Run it on a clean branch:
 ```bash
 git checkout -b migrate/android-15
 
-# Step 1 — apply mechanical fixes + scan remaining
+# Scan + apply mechanical fixes
 bash scan.sh --fix
 
 # Review mechanical changes before AI runs
 git diff
 
-# Step 2 — AI handles the rest
+# AI handles the rest
 bash migrate.sh
-
-# Step 3 — verify (re-scan to catch anything missed)
-bash scan.sh
 
 # Review all changes
 git diff
+
+# Optional: re-scan to confirm nothing was missed
+bash scan.sh
 ```
 
 ---
