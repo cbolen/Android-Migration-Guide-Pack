@@ -71,24 +71,11 @@ Open `docs/system-prompt.md` and paste the full contents as your first message, 
 
 ---
 
-## Step 3 — Migrate
+## Step 3 — Discover
 
 > **Prerequisite:** If your project is on AGP 4.x or 7.x, complete the toolchain upgrade first (`docs/toolchain-upgrade.md`) before migrating targetSdk.
 
-Choose one approach:
-
-| | When to use |
-|---|---|
-| **Automated** (scan.sh + migrate.sh) | Fastest path. Handles most projects in one pass. |
-| **Manual phases** (prompts below) | When you want to review and understand each change, or when automation misses something. |
-
-**For the automated approach, skip to [Automate the Migration](#automate-the-migration) below.**
-
----
-
-### Manual Phase-by-Phase Approach
-
-Work through the phases below in order. **Start with Phase 0** — it makes no code changes and produces a prioritized list of everything that needs fixing so you know the full scope before starting.
+Run Phase 0 first regardless of which migration approach you use. It produces `migration-plan.md` — a prioritised list of everything that needs fixing, the recommended fix order, and a testing checklist. No code changes are made.
 
 ### Phase 0 — Discovery: Full Project Audit
 
@@ -130,9 +117,24 @@ Do not make any code changes. Write the migration plan to migration-plan.md in t
 
 > **Chat tools:** Run `scan.sh` locally, then paste `migrate.log`, your source files, and `docs/migration-guide.md` into the chat. Replace the first two paragraphs of the prompt with: "I have pasted the scan results and project files above."
 
-Review the output and confirm scope before proceeding.
+Review `migration-plan.md` and confirm scope before proceeding.
 
 ---
+
+## Step 4 — Migrate
+
+Choose one approach:
+
+| | When to use |
+|---|---|
+| **Automated** (scan.sh + migrate.sh) | Fastest path. Handles most projects in one pass. |
+| **Manual phases** (prompts below) | When you want to review each change individually, or when automation misses something. |
+
+**For the automated approach, skip to [Automate the Migration](#automate-the-migration) below.**
+
+---
+
+### Manual Phase-by-Phase Approach
 
 ### Phase 1 — Manifest: android:exported
 
