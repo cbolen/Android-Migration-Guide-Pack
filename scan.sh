@@ -233,6 +233,15 @@ scan_src 'ACTION_CLOSE_SYSTEM_DIALOGS' \
   "ACTION_CLOSE_SYSTEM_DIALOGS — throws SecurityException on API 31+"
 scan_src 'MediaRecorder\(\)' \
   "MediaRecorder() no-arg constructor — removed API 31, use MediaRecorder(context)"
+
+# Custom SplashActivity: API 31+ shows system splash before app launches; custom splash causes double-splash
+_splash=$(find "$ROOT/app/src" -name "SplashActivity.kt" -o -name "SplashActivity.java" 2>/dev/null | head -1)
+if [[ -n "$_splash" ]]; then
+  found "Custom SplashActivity — migrate to androidx.core:core-splashscreen (API 31+ shows system splash before app; causes double-splash)"
+  log "             $_splash"
+else
+  ok "SplashActivity — none found"
+fi
 scan_src_verify 'GCMParameterSpec|AES/GCM' \
   "AES/GCM cipher — confirm exactly 12-byte IV is used (any other length throws on API 31)"
 

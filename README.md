@@ -160,27 +160,20 @@ AlarmManager.setExact() or a notification with inline reply — explain any MUTA
 before changing them.
 ```
 
-### Phase 3 — Activity Results
+### Phase 3 — Activity and Permission Results
 
 ```
 Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
 
-Replace all startActivityForResult() and onActivityResult() patterns in this project
-with the registerForActivityResult() API using ActivityResultContracts.
+Replace all startActivityForResult(), onActivityResult(), onRequestPermissionsResult(),
+and requestPermissions() patterns in this project with registerForActivityResult()
+using the appropriate ActivityResultContracts:
+- StartActivityForResult for launching activities
+- RequestPermission or RequestMultiplePermissions for runtime permissions
 Keep the same business logic — only change the API pattern.
 ```
 
-### Phase 4 — Permission Results
-
-```
-Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
-
-Replace all onRequestPermissionsResult() overrides with registerForActivityResult()
-using ActivityResultContracts.RequestPermission or RequestMultiplePermissions.
-Update the permission request call sites to match.
-```
-
-### Phase 5 — Storage paths
+### Phase 4 — Storage paths
 
 ```
 Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
@@ -192,7 +185,7 @@ Migrate files that should be visible in Downloads or shared media to MediaStore.
 Do not use MANAGE_EXTERNAL_STORAGE.
 ```
 
-### Phase 6 — AsyncTask
+### Phase 5 — AsyncTask
 
 ```
 Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
@@ -203,7 +196,7 @@ Move background work to Dispatchers.IO and UI updates to Dispatchers.Main.
 Keep the same data flow and error handling logic.
 ```
 
-### Phase 7 — POST_NOTIFICATIONS permission
+### Phase 6 — POST_NOTIFICATIONS permission
 
 ```
 Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
@@ -214,7 +207,7 @@ Add a POST_NOTIFICATIONS runtime permission check before every notify() call
 Also check that PendingIntent flags are FLAG_IMMUTABLE on all notification actions.
 ```
 
-### Phase 8 — Back navigation
+### Phase 7 — Back navigation
 
 ```
 Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
@@ -224,7 +217,7 @@ registered via onBackPressedDispatcher.addCallback().
 Preserve the existing back navigation logic inside the callback's handleOnBackPressed().
 ```
 
-### Phase 9 — Edge-to-edge insets
+### Phase 8 — Edge-to-edge insets
 
 ```
 Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
@@ -235,7 +228,7 @@ obscured by the status bar or navigation bar. Use ViewCompat.setOnApplyWindowIns
 This is required when targeting API 35.
 ```
 
-### Phase 10 — Splash screen
+### Phase 9 — Splash screen
 
 ```
 Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
@@ -246,7 +239,7 @@ app theme in styles.xml, and call installSplashScreen() in MainActivity.onCreate
 before setContentView.
 ```
 
-### Phase 11 — DataWedge receiver registration (API 33+)
+### Phase 10 — DataWedge receiver registration (API 33+)
 
 ```
 Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
@@ -257,7 +250,7 @@ using a Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU check.
 DataWedge broadcasts come from a system service and do not require RECEIVER_EXPORTED.
 ```
 
-### Phase 12 — Build target
+### Phase 11 — Build target
 
 ```
 Refer to docs/migration/migration-guide.md for Kotlin examples and detailed guidance on this change.
