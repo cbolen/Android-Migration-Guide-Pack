@@ -264,7 +264,7 @@ Copy `scan.sh` to your Android project root and run it:
 bash scan.sh --fix    # apply mechanical fixes + write remaining items to migrate.log
 ```
 
-The `--fix` flag applies safe, deterministic changes automatically (SDK version bumps, `Handler()` no-arg, `jcenter()` removal, Gradle wrapper) and writes everything else to `migrate.log` for the AI to handle. Works regardless of which AI tool you use.
+The `--fix` flag applies safe, deterministic changes automatically (SDK version bumps, `Handler()` no-arg, `jcenter()` removal, Gradle wrapper) and writes everything else to `migrate.log` in your project root. Works regardless of which AI tool you use.
 
 ### Step 2 — Fix
 

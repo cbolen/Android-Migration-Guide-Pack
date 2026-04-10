@@ -28,6 +28,7 @@ fi
 
 claude -p "Read migrate.log for the list of items needing fixes in this project. \
 Read docs/migration/migration-guide.md for guidance and Kotlin examples. \
-Apply fixes for every [FOUND] item in migrate.log, one at a time. \
-Commit after each fix." \
+Apply fixes for every [FOUND] item in migrate.log, one at a time. Commit after each fix. \
+When all fixes are done, output a TESTING CHECKLIST: for each fix applied, one row with \
+what to test, which API level or device to test on, and the pass criteria." \
 --allowedTools Edit,Read,Glob,Grep,Bash
