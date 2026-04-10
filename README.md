@@ -92,14 +92,24 @@ Work through the phases below in order. **Start with Phase 0** — it makes no c
 
 ### Phase 0 — Discovery: Full Project Audit
 
-Run this first. No changes — audit only.
+Run `scan.sh` first to generate `migrate.log`, then run this prompt. Phase 0 reads the scan results as a baseline so the AI can focus on what pattern matching cannot detect.
+
+```bash
+bash scan.sh    # generates migrate.log in your project root
+```
+
+Then run this prompt:
 
 ```
 Read CLAUDE.md for Zebra platform rules and docs/migration/migration-guide.md for the
 full A11–A15 change reference.
 
+Read migrate.log — it contains deterministic scan results and is the baseline for this audit.
+
 Scan this entire Android project — AndroidManifest.xml, all Kotlin/Java source files,
-build.gradle / build.gradle.kts, and libs.versions.toml if present.
+build.gradle / build.gradle.kts, and libs.versions.toml if present. Look especially for
+issues that pattern matching cannot detect: notification trampolines, missing permissions
+inferred from code context, cross-file interactions, and Zebra-specific runtime behaviour.
 
 Produce a migration plan with the following sections:
 1. BLOCKING ISSUES (install failure or runtime crash) — file, line, API level, fix needed
@@ -110,7 +120,7 @@ Produce a migration plan with the following sections:
 Do not make any changes. Output the plan only.
 ```
 
-> **Chat tools:** Replace the first paragraph with: "I have pasted the Zebra migration context and my project files above."
+> **Chat tools:** Run `scan.sh` locally, then paste `migrate.log`, your source files, and `docs/migration-guide.md` into the chat. Replace the first two paragraphs of the prompt with: "I have pasted the scan results and project files above."
 
 Review the output and confirm scope before proceeding.
 
