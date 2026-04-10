@@ -284,43 +284,7 @@ Apply fixes for every [FOUND] item, one at a time. Commit after each fix.
 
 ### migrate.sh — Claude Code automation
 
-Copy `migrate.sh` to your Android project root and run it on a clean branch:
-
-```bash
-#!/bin/bash
-# ─────────────────────────────────────────────────────────────────────────────
-# migrate.sh — AI-assisted Android migration
-# Run scan.sh first to generate migrate.log before running this script.
-#
-# Usage:
-#   ./migrate.sh            — apply fixes
-#   ./migrate.sh --dry-run  — print what would run, make no changes
-# ─────────────────────────────────────────────────────────────────────────────
-set -e
-
-DRY_RUN=false
-[[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
-
-if [[ ! -f migrate.log ]]; then
-  echo "ERROR: migrate.log not found. Run scan.sh first."
-  exit 1
-fi
-
-if $DRY_RUN; then
-  echo "DRY RUN — would run:"
-  echo "  claude -p \"Read migrate.log and docs/migration/migration-guide.md..."
-  echo "  Apply fixes for every [FOUND] item, one at a time. Commit after each fix.\""
-  exit 0
-fi
-
-claude -p "Read migrate.log for the list of items needing fixes in this project. \
-Read docs/migration/migration-guide.md for guidance and Kotlin examples. \
-Apply fixes for every [FOUND] item in migrate.log, one at a time. \
-Commit after each fix." \
---allowedTools Edit,Read,Glob,Grep,Bash
-```
-
-Run it on a clean branch:
+Copy `migrate.sh` to your Android project root. Run it on a clean branch after `scan.sh --fix`:
 
 ```bash
 git checkout -b migrate/android-15
