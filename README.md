@@ -118,7 +118,12 @@ Produce a migration plan with the following sections:
 2. REQUIRED CHANGES (silent failure or permission denied) — file, line, API level, fix needed
 3. ZEBRA-SPECIFIC ISSUES — DataWedge receiver flags, EMDK lifecycle, storage patterns
 4. SUGGESTED PHASE ORDER — which phases apply to this project and in what order
-5. TESTING CHECKLIST — for each issue above, what to test, which API level or device, pass criteria
+5. TESTING CHECKLIST — two parts:
+   a) For each issue above: what to test, which API level or device, pass criteria
+   b) Behavioral changes from docs/migration/migration-guide.md that apply to this project
+      and have no code fix — UI changes, system indicators, permission timing, runtime
+      policy changes (e.g. camera/mic privacy dot, clipboard toast, Quick Settings toggles,
+      "only this time" permission grants, notification UI changes)
 
 Do not make any code changes. Write the migration plan to migration-plan.md in the project root.
 ```
