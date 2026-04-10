@@ -574,7 +574,7 @@ The scanner confirmed `[OK]` for EMDK lifecycle. `DataWedgeManager` uses only th
 | R-04 | Same, 3-button navigation | API 35, 3-button nav | Same pass criteria |
 | R-05 | Add new item; edit existing item; camera permission flow; gallery pick | API 33+ | Each flow completes; result returned correctly to caller |
 | R-06 | Add item in `AddItemActivity`; confirm it appears in `MainActivity` | API 33+ | `InventoryItem` parcel deserialized correctly; no `ClassCastException` |
-| R-07 | Cold launch | Any | No lint deprecation error for `Handler()`; splash (or transition) works |
+| R-07 | Cold launch | API 30+ | Splash screen appears then transitions to `MainActivity` after the delay without crashing; no `RuntimeException` from `Handler` in logcat |
 | R-08 | Cold launch | API 31+ | Only one splash visible; no 2-second blank delay after system splash |
 | Z-01/Z-02 | Scan a barcode | API 33+ Zebra device | Scan delivered once; no `InstantiationException`; no duplicate handling |
 | Z-03 | Cold launch; immediately scan before profile setup completes | Zebra TC/MC device | Scan result arrives correctly; no missed first scan |
