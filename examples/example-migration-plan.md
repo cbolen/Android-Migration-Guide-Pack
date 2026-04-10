@@ -1,202 +1,174 @@
-# InventoryApp Migration Plan — targetSdk 30 → 35
+# InventoryApp-Legacy — Phase 0 Migration Plan (Android 11 → Android 15)
 
-**Generated**: 2026-04-09  
-**Scanner log**: migrate.log (12 [FOUND], 10 [VERIFY])  
-**Source reviewed**: AndroidManifest.xml, all 16 Kotlin files, app/build.gradle  
-**Starting SDK**: compileSdk 30 / targetSdk 30 / minSdk 26  
-**Target SDK**: compileSdk 35 / targetSdk 35
+> **Note**: This is the Phase 0 output from running the discovery prompt against the android-migration-sample app. The sample app was built to contain almost every possible issue — a real app will typically have a much smaller subset.
 
-Every `[FOUND]` and `[VERIFY]` item from migrate.log appears below, with additional
-issues discovered by cross-file analysis that the scanner did not detect.
+**Project**: `com.example.inventoryapp`
+**Current**: `targetSdkVersion 30`, `compileSdkVersion 30`, Java 1.8
+**Target**: `targetSdk 35`, `compileSdk 35`, Java 17
+**Scan baseline**: `migrate.log` (14 FOUND, 8 VERIFY)
+**Source reviewed**: AndroidManifest.xml, all Kotlin source files, app/build.gradle
 
 ---
 
 ## 1. BLOCKING ISSUES
 
-Issues that cause install failure, a runtime crash, or a hard-blocked feature.
+These cause install failure or a runtime crash. Fix every item in this section before testing on any API 31+ device.
 
 ---
 
-### B-01 — `android:exported` missing on five manifest components
-**API level**: 31 | **Impact**: APK fails to install on API 31+ devices  
-**Source**: migrate.log [VERIFY] (confirmed genuine — all five components are missing the attribute)
+### BLK-01 — Missing `android:exported` on five manifest components
+**API level**: 31 (install failure)
+**Files**:
+- `AndroidManifest.xml:32` — `.MainActivity` has `intent-filter`, `android:exported` absent
+- `AndroidManifest.xml:40` — `.AddItemActivity` has `intent-filter`, `android:exported` absent
+- `AndroidManifest.xml:52` — `.datawedge.ScanReceiver` has `intent-filter`, `android:exported` absent
+- `AndroidManifest.xml:61` — `.LowStockAlertReceiver` has `intent-filter`, `android:exported` absent
+- `AndroidManifest.xml:68` — `.util.StockCheckReceiver` has `intent-filter`, `android:exported` absent
 
-| Component | File | Line | Required value |
-|-----------|------|------|----------------|
-| `.MainActivity` | AndroidManifest.xml | 32 | `android:exported="false"` (internal action, not for third parties) |
-| `.AddItemActivity` | AndroidManifest.xml | 40 | `android:exported="false"` (same) |
-| `.datawedge.ScanReceiver` | AndroidManifest.xml | 52 | See B-09 — remove from manifest entirely |
-| `.LowStockAlertReceiver` | AndroidManifest.xml | 61 | `android:exported="false"` (only receives intents from this app) |
-| `.util.StockCheckReceiver` | AndroidManifest.xml | 68 | `android:exported="false"` (only receives alarms scheduled by this app) |
+**VERIFY result**: Confirmed missing on all five. `.SplashActivity` already has `android:exported="true"` and is correct.
 
-**Fix**: Add `android:exported` to each component. The correct value for internal actions is `false`. ScanReceiver should be removed from the manifest entirely (see B-09).
+**Fix**: Add `android:exported` to each component.
+- `.MainActivity` — internal action, only started by this app: `android:exported="false"`
+- `.AddItemActivity` — internal action: `android:exported="false"`
+- `.datawedge.ScanReceiver` — must receive DataWedge broadcasts from the DataWedge system process: `android:exported="true"`
+- `.LowStockAlertReceiver` — only receives intents from this app's `PendingIntent`; should be `android:exported="false"` (see also BLK-03)
+- `.util.StockCheckReceiver` — only receives intents from this app's `AlarmManager` `PendingIntent`: `android:exported="false"`
 
 ---
 
-### B-02 — `PendingIntent` created without `FLAG_IMMUTABLE`
-**API level**: 31 | **Impact**: `IllegalArgumentException` at runtime whenever a `PendingIntent` is created  
-**Source**: migrate.log [VERIFY] (confirmed — all four callsites pass `flags = 0`)
+### BLK-02 — `PendingIntent` created without `FLAG_IMMUTABLE`
+**API level**: 31 (runtime crash — `IllegalArgumentException`)
+**Files**:
+- `util/NotificationHelper.kt:57` — `PendingIntent.getBroadcast(..., 0)` for trampoline intent
+- `util/NotificationHelper.kt:78` — `PendingIntent.getActivity(..., 0)` for export-complete notification
+- `util/StockAlarmScheduler.kt:39` — `PendingIntent.getBroadcast(..., 0)` for alarm scheduling
+- `util/StockAlarmScheduler.kt:64` — `PendingIntent.getBroadcast(..., 0)` for alarm cancellation
 
-| File | Line | Call |
-|------|------|------|
-| NotificationHelper.kt | 57 | `PendingIntent.getBroadcast(context, 0, trampolineIntent, 0)` |
-| NotificationHelper.kt | 78 | `PendingIntent.getActivity(context, 1, mainIntent, 0)` |
-| StockAlarmScheduler.kt | 39 | `PendingIntent.getBroadcast(context, REQUEST_CODE, intent, 0)` |
-| StockAlarmScheduler.kt | 64 | `PendingIntent.getBroadcast(context, REQUEST_CODE, intent, 0)` |
+**VERIFY result**: Confirmed — all four calls pass `0` as the flags argument. None include `FLAG_IMMUTABLE` or `FLAG_MUTABLE`.
 
-**Fix**: Replace `0` with `PendingIntent.FLAG_IMMUTABLE` on every call. These intents do not need to be mutable, so `FLAG_IMMUTABLE` is correct for all four.
-
+**Fix**: Add `PendingIntent.FLAG_IMMUTABLE` to every call. None of these `PendingIntent`s need to be mutated by another app or by the system, so `FLAG_IMMUTABLE` is correct for all four. Example:
 ```kotlin
-// Before
-PendingIntent.getActivity(context, 1, mainIntent, 0)
-// After
-PendingIntent.getActivity(context, 1, mainIntent, PendingIntent.FLAG_IMMUTABLE)
+val pendingIntent = PendingIntent.getBroadcast(
+    context, 0, trampolineIntent,
+    PendingIntent.FLAG_IMMUTABLE
+)
 ```
 
 ---
 
-### B-03 — BouncyCastle (`"BC"`) provider removed
-**API level**: 31 | **Impact**: `NoSuchProviderException` at runtime whenever export encryption/decryption is called  
-**Source**: migrate.log [FOUND]
+### BLK-03 — Notification trampoline (`LowStockAlertReceiver` calls `startActivity`)
+**API level**: 31 (silent block — activity never launches when notification is tapped)
+**Files**:
+- `util/NotificationHelper.kt:52–65` — notification `contentIntent` targets `LowStockAlertReceiver`
+- `LowStockAlertReceiver.kt:17–21` — receiver's `onReceive()` calls `context.startActivity()`
 
-| File | Lines | Call |
-|------|-------|------|
-| CryptoHelper.kt | 37 | `Cipher.getInstance(TRANSFORMATION, PROVIDER)` — encrypt |
-| CryptoHelper.kt | 52 | `Cipher.getInstance(TRANSFORMATION, PROVIDER)` — decrypt |
+**FOUND in log**: Yes, both files flagged.
 
-**Fix**: Remove the second argument entirely. The default JCA provider (Conscrypt) supports `AES/CBC/PKCS5Padding`:
+**Details**: `showLowStockNotification()` wraps `LowStockAlertReceiver` in a `PendingIntent.getBroadcast` and attaches it to the notification's `contentIntent`. When the notification is tapped on API 31+, the receiver fires but `startActivity()` is blocked by the OS — the user sees nothing happen. This is a two-file interaction the log identified structurally but did not trace the exact call chain through.
 
+**Fix**: Remove `LowStockAlertReceiver` entirely. Replace the trampoline `PendingIntent` in `NotificationHelper.showLowStockNotification()` with a direct `PendingIntent.getActivity` targeting `MainActivity`:
 ```kotlin
-// Before
-val cipher = Cipher.getInstance(TRANSFORMATION, PROVIDER)  // "BC" throws on A12+
-// After
-val cipher = Cipher.getInstance(TRANSFORMATION)
-```
-
-Also delete the `PROVIDER = "BC"` constant in the `CryptoHelper` companion object.
-
----
-
-### B-04 — Notification trampoline blocked
-**API level**: 31 | **Impact**: Tapping a low-stock notification does nothing — `Activity` launch from `BroadcastReceiver` is blocked  
-**Source**: migrate.log [FOUND]
-
-**Root cause**: `NotificationHelper.kt:52–57` sets the notification's content intent to a `PendingIntent` targeting `LowStockAlertReceiver`, which in turn calls `startActivity(MainActivity)`. This two-hop pattern is blocked on API 31+.
-
-| File | Line | Issue |
-|------|------|-------|
-| NotificationHelper.kt | 52–57 | Trampoline `PendingIntent` targets `LowStockAlertReceiver` |
-| LowStockAlertReceiver.kt | 17–22 | Entire class is the trampoline; calls `startActivity()` in `onReceive()` |
-
-**Fix**: In `NotificationHelper.showLowStockNotification()`, replace the `BroadcastReceiver` `PendingIntent` with one targeting `MainActivity` directly. Then remove `LowStockAlertReceiver` entirely (and its manifest entry).
-
-```kotlin
-// Replace trampolineIntent / getBroadcast with:
-val directIntent = Intent(context, MainActivity::class.java).apply {
+val mainIntent = Intent(context, MainActivity::class.java).apply {
     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
 }
 val pendingIntent = PendingIntent.getActivity(
-    context, 0, directIntent, PendingIntent.FLAG_IMMUTABLE
+    context, 0, mainIntent, PendingIntent.FLAG_IMMUTABLE
 )
 ```
+Remove the `LowStockAlertReceiver` declaration from the manifest as well.
 
 ---
 
-### B-05 — `setExactAndAllowWhileIdle()` without `canScheduleExactAlarms()` guard
-**API level**: 31 | **Impact**: `SecurityException` at runtime when alarm is scheduled or rescheduled  
-**Source**: migrate.log [VERIFY] and [FOUND] (confirmed — guard is absent from both scheduling sites)
+### BLK-04 — BouncyCastle provider removed
+**API level**: 31 (runtime crash — `NoSuchProviderException`)
+**File**: `util/CryptoHelper.kt:37, 52`
 
-| File | Line | Issue |
-|------|------|-------|
-| StockAlarmScheduler.kt | 53 | `setExactAndAllowWhileIdle()` called without permission check |
-| StockCheckReceiver.kt | 76 | `scheduleDailyCheck()` called from alarm callback — also unguarded |
-| AndroidManifest.xml | — | `SCHEDULE_EXACT_ALARM` permission not declared |
+**FOUND in log**: Yes.
+
+**Details**: Both `encrypt()` and `decrypt()` call `Cipher.getInstance("AES/CBC/PKCS5Padding", "BC")`. Android 12 removes the BouncyCastle implementations. The `PROVIDER = "BC"` constant is used in both methods.
+
+**Fix**: Remove the second argument from both `Cipher.getInstance` calls:
+```kotlin
+val cipher = Cipher.getInstance(TRANSFORMATION) // default Conscrypt provider
+```
+Delete the `private const val PROVIDER = "BC"` constant; it is no longer referenced.
+
+---
+
+### BLK-05 — `setExactAndAllowWhileIdle()` without `SCHEDULE_EXACT_ALARM` permission
+**API level**: 31 (runtime crash — `SecurityException`)
+**File**: `util/StockAlarmScheduler.kt:53`
+
+**VERIFY result (exact alarm guard)**: Confirmed absent. The comment in the file explicitly documents the missing guard. There is no `canScheduleExactAlarms()` check anywhere in `scheduleDailyCheck()` or in any `onResume()` override.
+
+**Also**: `SCHEDULE_EXACT_ALARM` is not declared in `AndroidManifest.xml` (line 12 comment confirms this). Without the manifest declaration, the permission cannot be granted at all.
 
 **Fix**:
-
-1. Add permission to manifest:
-```xml
-<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-```
-
-2. Guard the alarm call in `StockAlarmScheduler.scheduleDailyCheck()`:
+1. Add to manifest: `<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />`
+2. Guard the scheduling call:
 ```kotlin
-if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-    val alarmManager = context.getSystemService(AlarmManager::class.java)
-    if (!alarmManager.canScheduleExactAlarms()) {
-        context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        })
-        return
-    }
+val alarmManager = context.getSystemService(AlarmManager::class.java)
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+    context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    })
+    return
 }
+alarmManager.setExactAndAllowWhileIdle(...)
 ```
-
-The same guard is needed in `StockCheckReceiver.onReceive()` where `scheduleDailyCheck()` is called to reschedule — if the permission is revoked between alarm firings, the reschedule attempt also throws.
 
 ---
 
-### B-06 — `AsyncTask` removed
-**API level**: 33 | **Impact**: `NoClassDefFoundError` at runtime on any database operation  
-**Source**: migrate.log [FOUND]
+### BLK-06 — `AsyncTask` removed
+**API level**: 33 (runtime crash — `NoClassDefFoundError`)
+**File**: `data/InventoryRepository.kt:38, 46, 54, 62, 67`
 
-| File | Lines | Classes |
-|------|-------|---------|
-| InventoryRepository.kt | 38, 46, 54, 62, 67 | `FetchAllTask`, `FindByBarcodeTask`, `InsertItemTask`, `UpdateItemTask`, `CheckLowStockTask` |
+**FOUND in log**: Yes — five `AsyncTask` subclasses: `FetchAllTask`, `FindByBarcodeTask`, `InsertItemTask`, `UpdateItemTask`, `CheckLowStockTask`.
 
-**Fix**: Replace all five inner `AsyncTask` subclasses with Kotlin coroutines.
-
+**Fix**: Convert all five inner classes to Kotlin coroutines. `InventoryRepository` needs a `CoroutineScope`; the repository is created directly in activities so either pass a `ViewModel`-scoped `CoroutineScope` or introduce `ViewModel` classes. Minimal fix per task:
 ```kotlin
-// Example: getAllItems with coroutines
 fun getAllItems(callback: (List<InventoryItem>) -> Unit) {
     CoroutineScope(Dispatchers.IO).launch {
-        val items = database.getAllItems()
-        withContext(Dispatchers.Main) { callback(items) }
+        val result = database.getAllItems()
+        withContext(Dispatchers.Main) { callback(result) }
     }
 }
 ```
-
-For proper lifecycle management, expose `suspend` functions and call from `viewModelScope` in a `ViewModel`. The current callback pattern can be preserved temporarily as a migration step.
-
----
-
-### B-07 — `registerReceiver()` without export flag
-**API level**: 34 | **Impact**: `IllegalArgumentException` at runtime when `MainActivity` starts  
-**Source**: migrate.log [VERIFY] (confirmed — the flag is absent; the code comment acknowledges the fix but has not been applied)
-
-| File | Line | Issue |
-|------|------|-------|
-| MainActivity.kt | 117 | `registerReceiver(scanReceiver, filter)` — no export flag |
-
-**Fix**: Use `ContextCompat.registerReceiver()` with `RECEIVER_NOT_EXPORTED`. DataWedge broadcasts are directed explicitly at this app's package, so `NOT_EXPORTED` is correct:
-
-```kotlin
-ContextCompat.registerReceiver(
-    this, scanReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED
-)
-```
+Preferred: introduce `InventoryViewModel` backed by `viewModelScope` and remove the callback pattern.
 
 ---
 
-### B-08 — `onBackPressed()` override — predictive back enforcement
-**API level**: 35 | **Impact**: Back navigation broken; predictive back swipe preview does not appear  
-**Source**: migrate.log [FOUND]
+### BLK-07 — `Handler()` no-arg constructor removed
+**API level**: 33 (runtime crash — constructor removed)
+**File**: `SplashActivity.kt:42`
 
-| File | Line | Issue |
-|------|------|-------|
-| MainActivity.kt | 154 | `override fun onBackPressed()` |
+**FOUND in log**: Yes (mechanical fix available via `--fix`).
 
-**Fix**: Replace with `OnBackPressedCallback`. The exit dialog logic is preserved:
+**Fix**: `Handler(Looper.getMainLooper()).postDelayed({...}, SPLASH_DELAY_MS)`
 
+Note: see also REQD-04 — the custom `SplashActivity` pattern should be replaced with the Jetpack SplashScreen library, which eliminates this call entirely.
+
+---
+
+### BLK-08 — `onBackPressed()` override — enforced removal
+**API level**: 35 (behavior break; `onBackPressed` is effectively dead code on API 35 with predictive back enforced)
+**File**: `MainActivity.kt:154`
+
+**FOUND in log**: Yes.
+
+**Details**: The override shows an exit confirmation dialog. On API 35 with predictive back enforced, `onBackPressed()` may not be called, so the dialog never appears and the app exits silently.
+
+**Fix**:
 ```kotlin
 onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
     override fun handleOnBackPressed() {
         AlertDialog.Builder(this@MainActivity)
             .setTitle("Exit")
-            .setMessage("Are you sure you want to exit the inventory app?")
+            .setMessage("Are you sure you want to exit?")
             .setPositiveButton("Exit") { _, _ ->
                 dwManager.disableScanning()
-                finish()
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -206,117 +178,20 @@ onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
 
 ---
 
-### B-09 — `ScanReceiver` static manifest registration has no no-arg constructor *(not detected by scanner)*
-**API level**: 31 | **Impact**: `RuntimeException` (InstantiationException) when DataWedge delivers to the statically-registered receiver after `android:exported="true"` is added (fix B-01)  
-**Cross-file interaction**: AndroidManifest.xml:52–57 + ScanReceiver.kt
+### BLK-09 — Edge-to-edge not implemented in three activities
+**API level**: 35 (visual regression — content drawn behind status bar and navigation bar)
+**Files**:
+- `MainActivity.kt:35–37` — comment confirms missing inset handling
+- `AddItemActivity.kt:41–42` — comment confirms missing inset handling
+- `ExportActivity.kt:31` — comment confirms missing inset handling
 
-`ScanReceiver` requires a lambda callback in its constructor (`onScanResult: (String, String) -> Unit`). Android instantiates manifest-registered receivers using a no-arg constructor. Fixing B-01 by adding `android:exported="true"` to the manifest registration means DataWedge will be able to deliver to it — and will crash when it tries to construct the class.
+**VERIFY result**: Confirmed absent. `SettingsActivity` is correctly implemented (uses `WindowCompat.setDecorFitsSystemWindows(window, false)` + `ViewCompat.setOnApplyWindowInsetsListener` — this is the reference implementation for the other three activities).
 
-Additionally, `ScanReceiver` is also registered dynamically in `MainActivity.setupScanReceiver()` for the same action (`com.example.inventoryapp.SCAN_RESULT`). Both registrations would match the same DataWedge broadcast, resulting in double delivery.
-
-**Fix**: Remove `ScanReceiver` from `AndroidManifest.xml` entirely (lines 52–57). Rely exclusively on the dynamic registration in `MainActivity`. The `RESULT_ACTION` listener for DataWedge API responses should also be handled in the dynamic receiver.
-
----
-
-## 2. REQUIRED CHANGES
-
-Silent failures, permission denials, or deprecated APIs enforced in the target SDK range.
-
----
-
-### R-01 — `POST_NOTIFICATIONS` not declared; no runtime request
-**API level**: 33 | **Impact**: All notifications silently dropped; low-stock alerts never shown  
-**Source**: migrate.log [VERIFY] (confirmed — permission absent from manifest, no runtime request anywhere)
-
-| File | Line | Issue |
-|------|------|-------|
-| AndroidManifest.xml | 11 | Permission commented out / missing |
-| NotificationHelper.kt | 71 | `manager.notify()` — no permission check before this call |
-| NotificationHelper.kt | 91 | Same for export-complete notification |
-
-**Fix**:
-
-1. Add to manifest:
-```xml
-<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-```
-
-2. Request at runtime before any notification fires (e.g., when the user enables notifications in `SettingsActivity`):
+**Fix**: Apply the same pattern as `SettingsActivity` to `MainActivity`, `AddItemActivity`, and `ExportActivity`. In each `onCreate`, after `setContentView`:
 ```kotlin
-if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-    requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-}
-```
-
----
-
-### R-02 — Storage permissions outdated; export always fails
-**API level**: 30/33 | **Impact**: CSV export always blocked by permission denial; photo capture silently fails  
-**Source**: migrate.log [FOUND] + [VERIFY]
-
-**Permission issues** (AndroidManifest.xml:4–7):
-
-| Permission | Issue | Fix |
-|-----------|-------|-----|
-| `READ_EXTERNAL_STORAGE` | Denied on API 33+ targets; no `maxSdkVersion` guard | Add `android:maxSdkVersion="32"`; add `READ_MEDIA_IMAGES` for API 33+ |
-| `WRITE_EXTERNAL_STORAGE` | Ignored on API 30+ for apps targeting API 29+; still checked in code | Remove the permission check from `ExportActivity`; switch to `getExternalFilesDir()` |
-
-**Code issues**:
-
-| File | Line | Issue | Fix |
-|------|------|-------|-----|
-| ExportActivity.kt | 56–65 | Checks `WRITE_EXTERNAL_STORAGE` which is always denied on API 30+ targets; export never runs | Remove permission check; switch storage path |
-| ExportActivity.kt | 110 | `Environment.getExternalStorageDirectory()` — not writable | Replace with `getExternalFilesDir("exports")` |
-| StorageHelper.kt | 22 | `Environment.getExternalStorageDirectory()` for exports | Replace with `context.getExternalFilesDir("exports")` |
-| StorageHelper.kt | 36 | `File("/sdcard/InventoryApp/photos")` hardcoded path | Replace with `context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)` |
-| StorageHelper.kt | 50 | `Environment.getExternalStorageDirectory()` for temp | Replace with `context.cacheDir` or `context.getExternalFilesDir("temp")` |
-
-`getExternalFilesDir()` requires no permission and files are deleted on uninstall. If exported CSVs must be visible in the system Files app after uninstall, use `MediaStore.Downloads` instead.
-
----
-
-### R-03 — `canScheduleExactAlarms()` not re-checked in `onResume`
-**API level**: 34 | **Impact**: Daily low-stock alarm silently stops firing after an app update  
-**Source**: migrate.log [VERIFY] (confirmed absent — neither `MainActivity` nor `SettingsActivity` has this check in `onResume`)
-
-On Android 14, `SCHEDULE_EXACT_ALARM` is silently revoked when the app is updated. No broadcast is sent; the permission simply disappears.
-
-**Fix**: Add to `MainActivity.onResume()`:
-
-```kotlin
-override fun onResume() {
-    super.onResume()
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        val alarmManager = getSystemService(AlarmManager::class.java)
-        if (!alarmManager.canScheduleExactAlarms()) {
-            startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
-        }
-    }
-    dwManager.switchToProfile("InventoryApp")
-}
-```
-
----
-
-### R-04 — Edge-to-edge inset handling missing on three activities
-**API level**: 35 | **Impact**: Content drawn behind status bar and navigation bar; buttons/inputs clipped  
-**Source**: migrate.log [VERIFY] (confirmed — `SettingsActivity` is correct; the other three are not)
-
-| File | Line | Status |
-|------|------|--------|
-| MainActivity.kt | 35–38 | Missing — comment documents the issue |
-| AddItemActivity.kt | 41–43 | Missing — comment documents the issue |
-| ExportActivity.kt | 31–32 | Missing — comment documents the issue |
-| SettingsActivity.kt | 28–30, 96–104 | **Correctly implemented** — reference implementation |
-
-**Fix**: Apply the same pattern from `SettingsActivity` to the other three:
-
-```kotlin
-// In Activity.onCreate
 WindowCompat.setDecorFitsSystemWindows(window, false)
-
-// After setContentView, on the root view
-ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content)) { view, insets ->
+val content = findViewById<View>(android.R.id.content)
+ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
     val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
     view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
     insets
@@ -325,121 +200,193 @@ ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content)) { 
 
 ---
 
-### R-05 — `startActivityForResult` / `onActivityResult` / `onRequestPermissionsResult` deprecated
-**API level**: 33/35 | **Impact**: Deprecated APIs that must be replaced for targetSdk 35; currently produce lint warnings  
-**Source**: migrate.log [FOUND]
+## 2. REQUIRED CHANGES
 
-| File | Lines | Pattern |
-|------|-------|---------|
-| MainActivity.kt | 57, 65, 75–93, 136 | `startActivityForResult`, `onActivityResult` |
-| AddItemActivity.kt | 67–83, 93–115, 143–145 | `startActivityForResult`, `onActivityResult`, `onRequestPermissionsResult` |
-| ExportActivity.kt | 52–85 | `onRequestPermissionsResult` (for the now-unnecessary `WRITE` permission) |
+These do not crash the app but cause silent failure, permission denial, or broken behavior.
 
-**Fix**: Replace with `registerForActivityResult()` contracts:
+---
 
+### REQD-01 — `POST_NOTIFICATIONS` missing from manifest and no runtime request
+**API level**: 33 (silent drop — notifications never shown)
+**Files**:
+- `AndroidManifest.xml:11` — comment confirms permission is absent
+- `util/NotificationHelper.kt:70, 91` — `notify()` called with no permission check
+
+**VERIFY result**: Confirmed absent — no `POST_NOTIFICATIONS` in manifest, and no `requestPermissions` or `registerForActivityResult(RequestPermission)` call anywhere in the codebase for this permission.
+
+**Fix**:
+1. Add to manifest: `<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />`
+2. Request at runtime before the first notification (suggest in `MainActivity.onResume` or on first use):
 ```kotlin
-// Launch AddItemActivity and receive a result
-private val addItemLauncher = registerForActivityResult(
-    ActivityResultContracts.StartActivityForResult()
-) { result ->
-    if (result.resultCode == RESULT_OK) {
-        val item = result.data?.let {
-            IntentCompat.getParcelableExtra(it, "new_item", InventoryItem::class.java)
-        }
-        // handle item
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    val launcher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted) { /* update UI: disable notification preference */ }
     }
+    launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
 }
-
-// Request camera permission
-private val requestCameraPermission = registerForActivityResult(
-    ActivityResultContracts.RequestPermission()
-) { granted ->
-    if (granted) launchCamera()
-    else Toast.makeText(this, "Camera permission denied", Toast.LENGTH_SHORT).show()
-}
-
-// Pick gallery image (Photo Picker)
-private val pickMedia = registerForActivityResult(
-    ActivityResultContracts.PickVisualMedia()
-) { uri -> uri?.let { ivPhoto.setImageURI(it); photoPath = it.toString() } }
 ```
-
-`ExportActivity.onRequestPermissionsResult()` should be deleted entirely once R-02 is applied — no storage permission check is needed with `getExternalFilesDir()`.
 
 ---
 
-### R-06 — `getParcelableExtra()` untyped — missed by scanner *(not detected by scanner)*
-**API level**: 33 | **Impact**: Deprecated untyped call; produces lint error targeting API 33+  
-**File**: MainActivity.kt:200–203
+### REQD-02 — Legacy storage permissions; `READ_EXTERNAL_STORAGE` and `WRITE_EXTERNAL_STORAGE`
+**API level**: 33 (permission denied for media reads; `WRITE_EXTERNAL_STORAGE` silently no-op since API 29)
+**Files**:
+- `AndroidManifest.xml:5, 7` — both legacy permissions declared without `maxSdkVersion`
+- `ExportActivity.kt:56–65` — requests `WRITE_EXTERNAL_STORAGE` at runtime and blocks export if denied
 
-The scanner reported `getParcelableExtra()` as `[OK]` because the literal call is hidden inside a private extension function:
+**VERIFY result**: Confirmed. `WRITE_EXTERNAL_STORAGE` has been meaningless since the app targeted API 29+; the `onRequestPermissionsResult` block in `ExportActivity` will never return `PERMISSION_GRANTED` on any device running API 30+, so exports are silently blocked unless the storage migration (REQD-06) is done first.
 
+**Fix**:
+1. Replace in manifest:
+```xml
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+    android:maxSdkVersion="32" />
+<!-- WRITE_EXTERNAL_STORAGE: remove entirely or scope to maxSdkVersion="28" -->
+<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"
+    android:minSdkVersion="33" />
+```
+2. See also REQD-06 — the storage migration fix resolves the `WRITE_EXTERNAL_STORAGE` dependency entirely.
+
+---
+
+### REQD-03 — `registerReceiver()` missing export flag (DataWedge scan receiver)
+**API level**: 33 (exception thrown at `registerReceiver` on API 33+ targets; DataWedge scans never arrive)
+**File**: `MainActivity.kt:117`
+
+**FOUND in log (Zebra-specific section)**: Yes, flagged in both the API 33 section and the Zebra-specific section.
+
+**VERIFY result**: Confirmed — `registerReceiver(scanReceiver, filter)` is called with no flag. The comment in the code acknowledges the issue.
+
+**Details**: The DataWedge `ScanReceiver` is registered dynamically in `setupScanReceiver()`. DataWedge broadcasts are sent from a separate system process but are targeted at this specific app (explicit broadcast). The correct flag is `RECEIVER_NOT_EXPORTED` — the receiver should not be reachable from third-party apps, only from DataWedge. On API 34+, omitting the flag throws an exception immediately.
+
+**Fix**:
 ```kotlin
-private inline fun <reified T : Parcelable> Intent.getParcelableExtraCompat(key: String): T? {
-    @Suppress("DEPRECATION")
-    return getParcelableExtra(key)  // ← untyped, deprecated API 33
-}
+ContextCompat.registerReceiver(
+    this,
+    scanReceiver,
+    filter,
+    ContextCompat.RECEIVER_NOT_EXPORTED
+)
 ```
-
-**Fix**: Use `IntentCompat.getParcelableExtra()` from `androidx.core:core-ktx`, or use the typed API conditionally:
-
-```kotlin
-private inline fun <reified T : Parcelable> Intent.getParcelableExtraCompat(key: String): T? {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-        getParcelableExtra(key, T::class.java)
-    else
-        @Suppress("DEPRECATION") getParcelableExtra(key)
-}
-```
+Using `ContextCompat.registerReceiver` handles the version check automatically (no-op on older APIs).
 
 ---
 
-### R-07 — `Handler()` no-arg constructor deprecated
-**API level**: 30+ (lint error) | **Impact**: Lint failure; potential `NullPointerException` if no `Looper` is attached  
-**Source**: migrate.log [FOUND]
+### REQD-04 — Custom `SplashActivity` — double-splash on API 31+
+**API level**: 31 (UX regression — system splash plays first, then app's 2-second animated splash)
+**File**: `SplashActivity.kt`
 
-| File | Line | Issue |
-|------|------|-------|
-| SplashActivity.kt | 42 | `Handler().postDelayed(...)` |
+**FOUND in log**: Yes.
 
-**Fix**: Replace with `Handler(Looper.getMainLooper())`. However, see also R-08 — the entire custom `SplashActivity` should be replaced.
-
----
-
-### R-08 — Custom `SplashActivity` conflicts with system splash screen *(not detected by scanner)*
-**API level**: 31 | **Impact**: Double-splash on API 31+ — system splash runs first, then the custom 2-second delay fires; combined cold-launch delay is roughly 3 seconds  
-**File**: SplashActivity.kt
-
-On API 31+, Android enforces a system-managed splash screen. The custom `SplashActivity` does not replace it — both execute. The result is: system splash → SplashActivity (2-second artificial delay) → MainActivity.
-
-**Fix**: Replace the custom `SplashActivity` with the AndroidX `core-splashscreen` library:
-
+**Fix**: Migrate to `androidx.core:core-splashscreen`. Remove `SplashActivity` and its layout. Move DataWedge profile creation to `MainActivity.onCreate`. Add the splash screen library and configure the theme:
 ```gradle
 implementation 'androidx.core:core-splashscreen:1.0.1'
 ```
-
-Move `DataWedgeManager.createInventoryProfile()` to `MainActivity.onCreate()` or `Application.onCreate()` to preserve initialization that currently happens during the splash delay (see also Z-03).
+```xml
+<!-- themes.xml -->
+<style name="Theme.InventoryApp.Starting" parent="Theme.SplashScreen">
+    <item name="windowSplashScreenBackground">@color/brand_color</item>
+    <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher</item>
+    <item name="postSplashScreenTheme">@style/Theme.InventoryApp</item>
+</style>
+```
+Make the launcher intent-filter point to `MainActivity`. In `MainActivity.onCreate` before `setContentView`: `installSplashScreen()`.
 
 ---
 
-### R-09 — Build configuration: compileSdk / targetSdk / Java compatibility / Gradle wrapper
-**Source**: migrate.log [FOUND]
+### REQD-05 — `startActivityForResult` / `onActivityResult` / `onRequestPermissionsResult` deprecated
+**API level**: 33+ (deprecated; enforced style on API 35; predictive back interacts with these)
+**Files**:
+- `MainActivity.kt:57, 65, 75, 136` — three `startActivityForResult` calls, one `onActivityResult`
+- `AddItemActivity.kt:83, 145` — two `startActivityForResult` calls, `onRequestPermissionsResult`, `onActivityResult`
+- `ExportActivity.kt:56–65, 71–84` — `onRequestPermissionsResult` for storage permission
 
-| File | Line | Issue | Fix |
-|------|------|-------|-----|
-| app/build.gradle | 7 | `compileSdkVersion 30` | `compileSdk 35` |
-| app/build.gradle | 11 | `targetSdkVersion 30` | `targetSdk 35` |
-| app/build.gradle | 18–19 | `JavaVersion.VERSION_1_8` | `JavaVersion.VERSION_17` |
-| app/build.gradle | 27 | `jvmTarget = '1.8'` | `jvmTarget = '17'` |
-| gradle-wrapper.properties | — | Pre-8.x wrapper | Upgrade to Gradle 8.x+ for AGP 8 / targetSdk 35 |
+**FOUND in log**: Yes, all flagged.
 
-Also update stale dependencies to versions compatible with AGP 8 / compileSdk 35:
-
-```gradle
-implementation 'androidx.core:core-ktx:1.13.1'              // was 1.6.0
-implementation 'androidx.appcompat:appcompat:1.7.0'          // was 1.3.1
-implementation 'com.google.android.material:material:1.12.0' // was 1.4.0
+**Fix**: Replace with `registerForActivityResult` and `ActivityResultContracts`. For `MainActivity`:
+```kotlin
+private val editItemLauncher = registerForActivityResult(
+    ActivityResultContracts.StartActivityForResult()
+) { result ->
+    if (result.resultCode == RESULT_OK) {
+        val item = result.data?.getParcelableExtra("new_item", InventoryItem::class.java)
+            ?: return@registerForActivityResult
+        // handle item
+    }
+}
 ```
+For camera in `AddItemActivity`: use `ActivityResultContracts.TakePicture()`.
+For gallery: use `ActivityResultContracts.PickVisualMedia()` (Photo Picker).
+For permissions: use `ActivityResultContracts.RequestPermission()`.
+
+Also fix `MainActivity.getParcelableExtraCompat` — the inline helper uses the untyped `@Suppress("DEPRECATION")` form. On API 33+, use `intent.getParcelableExtra("new_item", InventoryItem::class.java)`.
+
+---
+
+### REQD-06 — Storage: `Environment.getExternalStorageDirectory()` and hardcoded `/sdcard/` paths
+**API level**: 29+ (writes silently fail; paths inaccessible under scoped storage)
+**Files**:
+- `util/StorageHelper.kt:22` — `getExportDirectory()` uses `Environment.getExternalStorageDirectory()`
+- `util/StorageHelper.kt:36` — `getPhotosDirectory()` uses hardcoded `/sdcard/InventoryApp/photos`
+- `util/StorageHelper.kt:50` — `getTempDirectory()` uses `Environment.getExternalStorageDirectory()`
+- `ExportActivity.kt:110` — inline `Environment.getExternalStorageDirectory()` in `writeExportFile()`
+- `AddItemActivity.kt:137` — delegates to `StorageHelper.getPhotoFile()` which uses the hardcoded path
+
+**FOUND in log**: Yes, all flagged.
+
+**Fix per path**:
+
+| Path | New API |
+|------|---------|
+| `getExportDirectory` | `context.getExternalFilesDir("exports")` for private export, or `MediaStore.Downloads` if it must appear in the user's Downloads folder |
+| `getPhotosDirectory` | `context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)` |
+| `getTempDirectory` | `context.cacheDir` or `context.externalCacheDir` |
+| `ExportActivity.writeExportFile` | Same as `getExportDirectory` above |
+
+After this change, remove the `WRITE_EXTERNAL_STORAGE` permission check in `ExportActivity.exportInventory()` — no permission is needed to write to `getExternalFilesDir()`.
+
+---
+
+### REQD-07 — `SCHEDULE_EXACT_ALARM` not re-checked in `onResume` (silent revocation on update)
+**API level**: 34 (permission silently revoked on app update — alarms never fire after OTA/update)
+**File**: No `onResume` override exists in any activity that re-checks the exact alarm permission.
+
+**VERIFY result (canScheduleExactAlarms in onResume)**: Confirmed absent. The scan log flagged the missing guard at schedule-time (BLK-05 above). This is a separate, additional requirement: `SCHEDULE_EXACT_ALARM` is also silently revoked on app update starting API 34. There is no `onResume` check anywhere.
+
+**Fix**: Add to `SettingsActivity.onResume` (since that is where alarm scheduling is triggered) and to `MainActivity.onResume`:
+```kotlin
+override fun onResume() {
+    super.onResume()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val alarmManager = getSystemService(AlarmManager::class.java)
+        if (!alarmManager.canScheduleExactAlarms()) {
+            // Revoked after update — prompt user to re-grant
+            startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
+        }
+    }
+}
+```
+
+---
+
+### REQD-08 — Build configuration outdated
+**File**: `app/build.gradle`
+
+Items (all mechanical — `scan.sh --fix` applies these automatically):
+- `compileSdkVersion 30` → `compileSdk 35` (integer form required for AGP 8)
+- `targetSdkVersion 30` → `targetSdk 35`
+- `sourceCompatibility/targetCompatibility JavaVersion.VERSION_1_8` → `VERSION_17`
+- `kotlinOptions.jvmTarget '1.8'` → `'17'`
+- Gradle wrapper pre-8.x → upgrade to 8.x+ for AGP 8 / `targetSdk 35`
+
+Additional dependency updates required (not detected by scanner — outdated versions incompatible with AGP 8 + API 35 builds):
+- `androidx.core:core-ktx:1.6.0` → 1.13.1+
+- `androidx.appcompat:appcompat:1.3.1` → 1.7.0+
+- `com.google.android.material:material:1.4.0` → 1.12.0+
+- `androidx.recyclerview:recyclerview:1.2.0` → 1.3.2+
+- Add: `androidx.activity:activity-ktx:1.9.3` (required for `registerForActivityResult`, `OnBackPressedCallback`)
+- Add: `androidx.core:core-splashscreen:1.0.1` (for REQD-04)
+- Add: `androidx.work:work-runtime-ktx:2.9.1` (for BLK-06 coroutines/WorkManager migration)
 
 ---
 
@@ -447,188 +394,135 @@ implementation 'com.google.android.material:material:1.12.0' // was 1.4.0
 
 ---
 
-### Z-01 — `ScanReceiver` dynamic registration missing `RECEIVER_NOT_EXPORTED`
-**Confirmed issue** (same as B-07 — DataWedge context)  
-**File**: MainActivity.kt:111–117
+### ZEB-01 — DataWedge `ScanReceiver` (manifest): exported flag must be `true`
+**File**: `AndroidManifest.xml:52–57`
 
-DataWedge delivers scan results via an explicit broadcast targeted at this app's package. `RECEIVER_NOT_EXPORTED` is the correct flag — it prevents arbitrary third-party apps from injecting fake scan events while still allowing DataWedge (a system service) to deliver. The comment at line 114 correctly identifies the fix but it has not been applied. Fix is in B-07.
+The manifest-registered `ScanReceiver` must be `android:exported="true"` because DataWedge runs in a separate system process and delivers scan broadcasts from outside this app's process. Without `exported="true"`, DataWedge broadcasts are silently dropped on API 31+. This is a special case that differs from the other receivers in BLK-01 (which should all be `false`).
 
----
-
-### Z-02 — `ScanReceiver` static manifest registration must be removed
-**Confirmed issue** (same as B-09 — DataWedge context)  
-**Files**: AndroidManifest.xml:52–57, ScanReceiver.kt
-
-The manifest registers `ScanReceiver` for both `com.symbol.datawedge.api.RESULT_ACTION` and `com.example.inventoryapp.SCAN_RESULT`. `ScanReceiver` has no no-arg constructor and will crash on static delivery. It should exist only as a dynamic registration in `MainActivity`. If DataWedge API result callbacks (profile creation, etc.) are needed outside `MainActivity`, create a separate `BroadcastReceiver` with a no-arg constructor.
+The dynamically registered `ScanReceiver` in `MainActivity.setupScanReceiver()` uses the same intent filter (`com.example.inventoryapp.SCAN_RESULT`) as both the manifest receiver and the DataWedge profile intent output. Having both registrations is redundant — choose one:
+- **Recommended**: keep only the dynamic registration (lifecycle-bound, unregistered in `onDestroy`). Remove the manifest `<receiver>` for `ScanReceiver`. Use `RECEIVER_NOT_EXPORTED` on the dynamic registration (REQD-03) — DataWedge's explicit broadcast reaches `RECEIVER_NOT_EXPORTED` receivers because it targets the app's package directly.
+- **Alternative**: keep only the manifest receiver if scan results must arrive when the activity is not in the foreground.
 
 ---
 
-### Z-03 — DataWedge profile setup may race after `SplashActivity` is removed
-**File**: SplashActivity.kt:34–35  
-**Impact**: Scanner profile may not be associated before the user begins scanning in `MainActivity`
+### ZEB-02 — DataWedge profile: intent delivery mode "2" (broadcast) is correct
+**File**: `datawedge/DataWedgeManager.kt:68`
 
-`DataWedgeManager.createInventoryProfile()` is currently called during the 2-second splash delay, giving DataWedge time to process the profile. If the custom `SplashActivity` is replaced with the system splash (R-08), this initialization window disappears.
-
-**Fix**: Move `createInventoryProfile()` to `MainActivity.onCreate()` before `setupScanReceiver()`. Optionally register a DataWedge `RESULT_ACTION` listener to confirm the profile is ready before enabling scanning. Calling it in `Application.onCreate()` is also acceptable for earliest-possible execution.
+`intent_delivery = "2"` configures DataWedge to deliver scan results as broadcasts. This is the correct mode for a `BroadcastReceiver`-based integration and requires no change. Note: DataWedge broadcasts to this app are explicit (targeted at the app's package), so they are not affected by Android's implicit broadcast restrictions. Confirm the DataWedge profile output action (`com.example.inventoryapp.SCAN_RESULT`) matches the filter registered in `setupScanReceiver()` — they match in the current code.
 
 ---
 
-### Z-04 — Stored photo paths in database will break after storage migration
-**Files**: StorageHelper.kt:36, InventoryDatabase.kt, AddItemActivity.kt:139  
-**Impact**: After migrating from `/sdcard/InventoryApp/photos/` to `getExternalFilesDir()`, existing `photo_path` values in the database point to the old location; photos will not display
+### ZEB-03 — DataWedge profile created in `SplashActivity` — must move when splash is removed
+**File**: `SplashActivity.kt:34–35`
 
-**Fix**: When bumping `DATABASE_VERSION` in `InventoryDatabase`, add a migration step that:
-1. Moves existing photo files from the old path to the new `getExternalFilesDir(DIRECTORY_PICTURES)` path
-2. Updates stored `photo_path` column values in the database
-
-**Important**: `InventoryDatabase.onUpgrade()` currently drops and recreates the table (`db.execSQL("DROP TABLE IF EXISTS...")`), which silently wipes all inventory data on any version bump. Replace this with a proper `ALTER TABLE` / data migration before incrementing `DATABASE_VERSION`.
+`DataWedgeManager.createInventoryProfile()` is called during the splash delay. When `SplashActivity` is removed as part of REQD-04, this call must move to `MainActivity.onCreate`. Profile creation via `SET_CONFIG` is idempotent — calling it on each launch ensures the profile remains configured after a factory reset or after DataWedge is reinstalled.
 
 ---
 
-### Z-05 — No EMDK usage detected
-The scanner confirmed `[OK]` for EMDK lifecycle. `DataWedgeManager` uses only the DataWedge Intent API, which is the correct approach for this use case. No EMDK changes required.
+### ZEB-04 — No EMDK usage detected
+The scanner is accessed entirely through DataWedge, which is the correct pattern for this app type. No EMDK lifecycle issues to address. The scan log confirmed this with `[OK] EMDK usage`. If direct scanner control is ever required, add EMDK and ensure `EMDKManager.release()` is called in both `onPause` and `onDestroy`.
+
+---
+
+### ZEB-05 — Storage paths on Zebra devices
+`/sdcard/` paths in `StorageHelper.kt` are non-functional under scoped storage. On Zebra devices, the external storage path may differ by model (TC, MC, ET series) — hardcoded paths are additionally unreliable in an enterprise fleet context. The `getExternalFilesDir()` fix in REQD-06 is device-agnostic and resolves this entirely.
 
 ---
 
 ## 4. SUGGESTED PHASE ORDER
 
-### Phase 1 — Build baseline and lint
-- Bump `compileSdk` to 35 (leave `targetSdk` at 30 initially)
-- Upgrade Gradle wrapper and AGP; update dependency versions
-- Run `./gradlew lint`; review `app/build/reports/lint-results-debug.html`
-- Commit a clean build before making any behavioral changes
+Based on the issues found, apply the migration phases in this order:
 
-### Phase 2 — API 31 blocking fixes (targetSdk 30 → 31)
-1. **B-01**: Add `android:exported` to all manifest components
-2. **B-09 / Z-02**: Remove `ScanReceiver` from manifest
-3. **B-04**: Fix notification trampoline — remove `LowStockAlertReceiver`; attach `MainActivity` `PendingIntent` directly to notification
-4. **B-02**: Add `FLAG_IMMUTABLE` to all four `PendingIntent` calls
-5. **B-03**: Remove `"BC"` provider from `CryptoHelper`
-6. **B-05**: Add `SCHEDULE_EXACT_ALARM` to manifest; add `canScheduleExactAlarms()` guard in `StockAlarmScheduler` and `StockCheckReceiver`
-7. **R-07**: Fix `Handler()` no-arg constructor in `SplashActivity`
-- Bump `targetSdk` to 31; test on an API 31 device or emulator
-
-### Phase 3 — Storage migration
-1. **R-02**: Replace `Environment.getExternalStorageDirectory()` and `/sdcard/` paths in `StorageHelper` and `ExportActivity`
-2. **Z-04**: Fix `InventoryDatabase.onUpgrade()` to use ALTER TABLE; add photo-path migration step with `DATABASE_VERSION` bump
-3. Remove `WRITE_EXTERNAL_STORAGE` permission check from `ExportActivity`
-4. Update manifest storage permissions with `maxSdkVersion` guards; add `READ_MEDIA_IMAGES`
-- Confirm CSV export and photo capture work end-to-end on API 30+ device
-
-### Phase 4 — API 33 fixes (targetSdk 31 → 33)
-1. **B-06**: Replace all five `AsyncTask` inner classes in `InventoryRepository` with coroutines
-2. **R-01**: Add `POST_NOTIFICATIONS` to manifest; add runtime permission request in `SettingsActivity` or on first launch
-3. **B-07 / Z-01**: Add `RECEIVER_NOT_EXPORTED` flag to `registerReceiver()` in `MainActivity`
-4. **R-06**: Fix untyped `getParcelableExtra()` wrapper in `MainActivity`
-- Bump `targetSdk` to 33; test on an API 33 device
-
-### Phase 5 — API 34 fixes (targetSdk 33 → 34)
-1. **R-03**: Add `canScheduleExactAlarms()` re-check in `MainActivity.onResume()`
-- Bump `targetSdk` to 34; test on an API 34 device
-- Verify DataWedge scan broadcasts still arrive after the `registerReceiver` flag change
-
-### Phase 6 — API 35 fixes (targetSdk 34 → 35)
-1. **R-04**: Add edge-to-edge inset handling to `MainActivity`, `AddItemActivity`, `ExportActivity`
-2. **B-08**: Replace `onBackPressed()` in `MainActivity` with `OnBackPressedCallback`
-- Bump `targetSdk` to 35; test on an API 35 device
-- Test both gesture navigation and 3-button navigation for edge-to-edge layout
-
-### Phase 7 — Activity result modernization
-1. **R-05**: Replace `startActivityForResult` / `onActivityResult` / `onRequestPermissionsResult` across `MainActivity`, `AddItemActivity`, `ExportActivity`
-- End-to-end test: add item, edit item, camera capture, gallery pick
-
-### Phase 8 — SplashActivity migration
-1. **R-08 / Z-03**: Replace custom `SplashActivity` with AndroidX `core-splashscreen`; move DataWedge profile setup to `MainActivity.onCreate()`
-- Confirm no double-splash on API 31+ devices
-- Confirm DataWedge profile is active before first scan
-
-### Phase 9 — Final cleanup
-1. **R-09**: Confirm `compileSdk 35` / `targetSdk 35` / `JavaVersion.VERSION_17` are final
-2. Remove remaining `@Suppress("DEPRECATION")` annotations where deprecated APIs have been replaced
-3. Run final lint pass; fix any remaining warnings
+| Step | Phase | What it addresses |
+|------|-------|-------------------|
+| 1 | **Phase 1 — Assessment** | Run `./gradlew lint` to baseline all warnings before making changes. Confirms the issues found here and surfaces any additional library-level deprecations. |
+| 2 | **Phase 0 mechanical fixes** | Apply `scan.sh --fix`: update `targetSdk`, `compileSdk`, Java compat, Gradle wrapper, `Handler()` no-arg (BLK-07 partial). |
+| 3 | **Phase 2a — targetSdk 30→31** | Fix BLK-01 (`android:exported`), BLK-02 (`PendingIntent` flags), BLK-03 (notification trampoline), BLK-04 (BouncyCastle), BLK-05 (exact alarm + manifest permission), REQD-04 (SplashScreen library). Bump `targetSdk` to 31 and verify on API 31 device before continuing. |
+| 4 | **Phase 3 — Storage Migration** | Fix REQD-06 (all storage paths and `Environment.getExternalStorageDirectory()` calls). Do this before bumping to API 33 so scoped storage is correct and the `WRITE_EXTERNAL_STORAGE` dependency in `ExportActivity` is resolved. |
+| 5 | **Phase 2b — targetSdk 31→33** | Fix BLK-06 (`AsyncTask` → coroutines), REQD-01 (`POST_NOTIFICATIONS`), REQD-02 (legacy permissions), REQD-03 (`registerReceiver` flag), REQD-05 (`ActivityResultContracts`). Bump `targetSdk` to 33. |
+| 6 | **Phase 2c — targetSdk 33→34** | Fix REQD-07 (`canScheduleExactAlarms` in `onResume`). Verify implicit intent behavior (no implicit internal intents detected, but confirm after refactor). Bump `targetSdk` to 34. |
+| 7 | **Phase 2d — targetSdk 34→35** | Fix BLK-08 (`OnBackPressedCallback`), BLK-09 (edge-to-edge in three activities), REQD-08 remaining build config and dependency versions. Bump `targetSdk` to 35. |
+| 8 | **Phase 4 — Jetpack Libraries** | Update all dependency versions (core-ktx, appcompat, material, recyclerview, activity-ktx). Resolves any remaining compatibility warnings after target bump. |
 
 ---
 
 ## 5. TESTING CHECKLIST
 
-### Part A — Per-issue verification
+### Part A — Per-Issue Tests
 
 | ID | What to test | API level / device | Pass criteria |
 |----|-------------|-------------------|---------------|
-| B-01 | Install APK | API 31 device or emulator | APK installs without `INSTALL_FAILED_*` error |
-| B-02 | Trigger any notification; schedule any alarm | API 31+ | No `IllegalArgumentException` in logcat |
-| B-03 | Export CSV with encryption | API 31+ | Encryption/decryption completes; no `NoSuchProviderException` |
-| B-04 | Receive a low-stock notification; tap it | API 31+ | `MainActivity` opens; notification tap is not silently ignored |
-| B-05 | Enable daily alerts in Settings; watch logcat | API 31+ | Alarm schedules without `SecurityException`; fires at 08:00 next day |
-| B-05 (manifest) | Check `SCHEDULE_EXACT_ALARM` in installed app | Any | Permission visible in Settings → App info → Permissions |
-| B-06 | Add, edit, and list inventory items | API 33 | No `NoClassDefFoundError`; all DB operations complete |
-| B-07 | Launch `MainActivity` | API 34 | No `IllegalArgumentException` at `registerReceiver()` |
-| B-08 | Swipe back from `MainActivity` | API 35 | Predictive back animation visible on swipe; exit dialog appears on release |
-| B-09 | Scan a barcode | API 31+ (after B-01 fix) | No `InstantiationException`; scan result handled exactly once |
-| R-01 | Enable notifications; trigger a low-stock condition | API 33+ | Notification appears after permission granted; silent drop confirmed fixed |
-| R-01 | Deny `POST_NOTIFICATIONS`; verify app behavior | API 33+ | App degrades gracefully; no crash; no silent assumption of permission |
-| R-02 | Export CSV | API 30+ | File created in `getExternalFilesDir("exports")`; no `SecurityException` |
-| R-02 | Take item photo | API 30+ | Photo saved in `getExternalFilesDir(DIRECTORY_PICTURES)`; displayed in `AddItemActivity` |
-| R-03 | Update app on API 34 device; immediately open app | API 34 | System settings prompt for exact alarm permission appears if revoked |
-| R-04 | Scroll inventory list; open add-item and export forms | API 35, gesture nav | No content hidden behind status bar or nav bar |
-| R-04 | Same, 3-button navigation | API 35, 3-button nav | Same pass criteria |
-| R-05 | Add new item; edit existing item; camera permission flow; gallery pick | API 33+ | Each flow completes; result returned correctly to caller |
-| R-06 | Add item in `AddItemActivity`; confirm it appears in `MainActivity` | API 33+ | `InventoryItem` parcel deserialized correctly; no `ClassCastException` |
-| R-07 | Cold launch | API 30+ | Splash screen appears then transitions to `MainActivity` after the delay without crashing; no `RuntimeException` from `Handler` in logcat |
-| R-08 | Cold launch | API 31+ | Only one splash visible; no 2-second blank delay after system splash |
-| Z-01/Z-02 | Scan a barcode | API 33+ Zebra device | Scan delivered once; no `InstantiationException`; no duplicate handling |
-| Z-03 | Cold launch; immediately scan before profile setup completes | Zebra TC/MC device | Scan result arrives correctly; no missed first scan |
-| Z-04 | Upgrade app on a device with stored item photos | Zebra device with live data | Photos still display after storage migration; no broken image views in list |
+| BLK-01 | Install APK via ADB or MDM push | API 31+ (TC52 or emulator) | APK installs without `INSTALL_FAILED_MISSING_XML_ATTRIBUTE`; no install error |
+| BLK-02 | Tap low-stock notification; observe alarm scheduling | API 31+ | No `IllegalArgumentException` in logcat; notification tap opens `MainActivity` |
+| BLK-03 | Trigger a low-stock alert; tap the notification | API 31+ | `MainActivity` opens directly with no delay or silent failure; `LowStockAlertReceiver` is gone |
+| BLK-04 | Export inventory with encryption enabled | API 31+ (TC52) | Export completes; no `NoSuchProviderException` in logcat |
+| BLK-05 | Save settings with notifications enabled (first time) | API 31+ | Alarm schedules without `SecurityException`; verify via `adb shell dumpsys alarm` |
+| BLK-05 | Revoke `SCHEDULE_EXACT_ALARM` in device settings; tap Save | API 31+ | App navigates to system Settings alarm permission screen; does not crash |
+| REQD-07 | Update the app via ADB install; open the app | API 34+ | `canScheduleExactAlarms()` is re-checked in `onResume`; system Settings prompt shown if revoked |
+| BLK-06 | Load inventory list; add, update, and delete items | API 33+ | All operations complete without `NoClassDefFoundError` for `AsyncTask` |
+| BLK-07 | Launch app | API 33+ | Splash appears; no `RuntimeException` from `Handler()` no-arg constructor |
+| BLK-08 | Press back (button and swipe) from `MainActivity` | API 35 physical device | Exit confirmation dialog appears; completing swipe before release shows preview |
+| BLK-09 | Open `MainActivity`, `AddItemActivity`, `ExportActivity`; rotate device | API 35 | Content not clipped by status bar or navigation bar in both portrait and landscape |
+| BLK-09 | Switch between gesture and 3-button navigation | API 35 | Layout adjusts correctly in both navigation modes; no content hidden behind nav bar |
+| REQD-01 | Fresh install; open app for first time | API 33+ | `POST_NOTIFICATIONS` dialog appears; notifications appear after grant |
+| REQD-01 | Deny `POST_NOTIFICATIONS`; trigger low-stock condition | API 33+ | No crash; no silent exception; notification-related UI gracefully disabled or shows rationale |
+| REQD-02 | Open gallery picker in `AddItemActivity` | API 33+ | `READ_MEDIA_IMAGES` is requested (not `READ_EXTERNAL_STORAGE`); picker opens |
+| REQD-03 | Scan a barcode in `MainActivity` | API 33+ (TC52 with DataWedge) | Scan result arrives; item found or add-item flow opens; no `SecurityException` at `registerReceiver` |
+| REQD-04 | Cold launch on API 31+ | API 31+ | Single splash screen shown (system splash only); no second custom 2-second animated splash |
+| REQD-05 | Add new item; edit existing item; pick photo from gallery | All | Correct results returned; no `ActivityNotFoundException`; item saved correctly |
+| REQD-06 | Export CSV | API 29+ | File written to `getExternalFilesDir("exports")`; path shown in UI is accessible; no storage permission dialog |
+| REQD-06 | Take photo for item | API 29+ | Photo saved to `getExternalFilesDir(DIRECTORY_PICTURES)`; displayed correctly in `AddItemActivity` |
+| ZEB-01 | Scan barcode after fresh DataWedge profile creation | TC52 (API 33+) | Scan result arrives in `MainActivity`; barcode lookup completes; no silent drop |
+| ZEB-03 | Factory-reset device; install app; launch | TC52 | DataWedge profile "InventoryApp" is created on first launch from `MainActivity.onCreate`; scanning works immediately |
 
 ---
 
-### Part B — Behavioral changes with no code fix
+### Part B — Behavioral Changes With No Code Fix Required
 
-These are system-enforced UI and policy changes from the A11→A15 range that apply to this project and require QA verification rather than a code change.
+These changes take effect automatically after the `targetSdk` bump but require no code change. Verify each on device and inform QA testers.
 
-**Camera privacy indicator (API 31+)**  
-When `AddItemActivity` opens the camera for photo capture, a green dot appears in the status bar corner. No code action needed. Verify the indicator disappears immediately when the camera activity closes. Brief warehouse operators that this is a system indicator, not an error.
+**Overscroll stretch effect (API 31)**
+From API 31, overscroll produces a stretch animation instead of a blue glow. The inventory `RecyclerView` will stretch at the top and bottom when scrolled past its content. No code change is needed, but test visually — any custom `EdgeEffect` overrides or theme attributes that styled the glow effect should be removed. Verify on a device with a light background where the stretch is visible.
 
-**Overscroll animation change (API 31+)**  
-The inventory `RecyclerView` in `MainActivity` previously showed a blue glow at list edges. On API 31+, this is replaced by a stretch animation. No code change needed, but run visual QA to confirm it does not look broken.
+**Camera and microphone privacy indicator (API 31)**
+Android 12+ shows a green dot in the status bar corner when the camera or microphone is in active use. When `AddItemActivity` launches the camera intent, the privacy dot will appear and disappear when the intent returns. This is expected system behavior; inform QA testers so it is not filed as a defect.
 
-**Root launcher activity no longer finishes on back press (API 31+)**  
-`MainActivity` is the launcher activity. After implementing B-08 (`OnBackPressedCallback`), the explicit `finish()` call in the "Exit" dialog still works. However, if the user presses Cancel and the dialog is dismissed, back moves `MainActivity` to the background (rather than finishing it). Confirm `dwManager.disableScanning()` is called before `finish()` in all code paths including the dialog's positive button.
+**Clipboard access toast (API 33)**
+When any part of the app reads clipboard content, Android 13+ automatically shows a system toast at the bottom of the screen. If any screen shows a custom "Copied!" or "Pasted!" toast, it will now appear alongside the system toast. Review any clipboard-related feedback in `EditText` fields (e.g., barcode or location fields in `AddItemActivity`) to check for duplicate toasts.
 
-**Clipboard system toast (API 13/33)**  
-If any screen copies text to the clipboard (barcodes, export file path), the system shows an automatic "Copied" toast. Remove any custom "Copied!" toasts in the app to avoid a double-toast.
+**`POST_NOTIFICATIONS` "Only this time" grant (API 33)**
+The `POST_NOTIFICATIONS` runtime dialog includes an "Only this time" option. The permission expires when the app is backgrounded. Test the notification flow when this option is selected — verify the app handles a subsequent denied permission check gracefully on the next notification attempt without crashing or producing unhandled exceptions.
 
-**Notification permission — 'Don't ask again' path (API 33+)**  
-If the user denies `POST_NOTIFICATIONS` and selects "Don't ask again", subsequent `requestPermissions` calls silently no-op. Verify that the app shows a rationale or links to system app settings in this case. The notifications toggle in `SettingsActivity` should disable itself (or show a warning) when the system permission is denied.
+**Notification UI — 1-tap expansion (API 33)**
+Single-line notifications from API 33+ require only one tap to expand (previously two). The low-stock notification `setContentText` with a multi-item summary will display differently. Verify the notification content and the action button (if any) are readable and tappable in the notification shade.
 
-**Per-app language selector (API 33+)**  
-After bumping targetSdk to 33, a per-app language option appears in System Settings → App info. Test that the app's date/number formatting in the exported CSV remains correct after a user-selected language change.
+**Partial photo access — "Select photos" grant (API 34)**
+When `READ_MEDIA_IMAGES` is requested on API 34+, the user sees an option to grant access only to selected photos. `AddItemActivity` must handle the case where `READ_MEDIA_VISUAL_USER_SELECTED` is granted but `READ_MEDIA_IMAGES` is not. The system Photo Picker (`ActivityResultContracts.PickVisualMedia`) does not require any media permission and avoids this complexity entirely — consider switching the gallery button to `PickVisualMedia` as part of the REQD-05 refactor.
 
-**Predictive back gesture preview (API 33 opt-in / API 35 enforced)**  
-After B-08 is implemented, the predictive back swipe should show an animation previewing the destination. For `MainActivity`, this previews the app going to background (no next screen — the exit dialog fires on gesture release). Verify the animation is smooth in both gesture and 3-button navigation modes on API 35.
+**Predictive back gesture preview (API 35)**
+With predictive back enforced on API 35, a swipe-right from the left edge of `MainActivity` shows a preview of the app icon (indicating the app will exit) before the user releases. Once BLK-08 is fixed, QA should verify:
+1. The preview appears during the swipe gesture (before release).
+2. Completing the swipe triggers the exit confirmation dialog (the `OnBackPressedCallback`).
+3. Canceling the dialog returns the user to `MainActivity`.
+Test with gesture navigation enabled (Settings → Navigation → Gesture Navigation).
 
-**Notification cooldown (API 35)**  
-If missed alarms fire in rapid succession after a device restart, posting multiple low-stock notifications quickly may cause the system to temporarily downgrade their priority. Prefer updating a single persistent notification (same `NOTIFICATION_ID_LOW_STOCK`) with the current low-stock count rather than posting multiple notifications.
+**`elegantTextHeight` default `true` (API 35)**
+All `TextView` instances will use taller, more readable line metrics by default on API 35. Test every screen for text clipping, especially:
+- Inventory list rows in `InventoryAdapter` — fixed-height rows with barcode, name, quantity, and location labels
+- Export status text in `ExportActivity` — may show a long file path
+- Settings form labels in `SettingsActivity`
 
-**`elegantTextHeight` defaults to `true` (API 35)**  
-All `TextView`s in the app gain taller line height on API 35. Key areas to verify:
+On Zebra WS50/WS501 (square, compact display), fixed-row heights are particularly prone to clipping at the new line height. Any rows or labels sized to compact font metrics should be validated.
 
-- `item_row.xml` — each inventory row may be taller than designed; check for clipping of barcode or quantity text
-- `activity_add_item.xml` — form field labels and `EditText` hints may wrap or be clipped
-- `activity_export.xml` — status text may overflow its container
-- **Zebra WS50/WS501 (square display)** — the smaller vertical space means the line-height increase has a proportionally larger impact; run a dedicated layout pass on this form factor
+**Notification cooldown (API 35)**
+If the app posts many low-stock notifications in quick succession (e.g., a large import triggers `checkLowStock` repeatedly), Android 15 may temporarily reduce notification priority. The current `showLowStockNotification` uses a fixed `NOTIFICATION_ID_LOW_STOCK = 1001`, so calling `notify()` again with the same ID updates the existing notification rather than stacking new ones. Verify this behavior on API 35 — no burst of separate notifications should appear for a multi-item low-stock check.
 
-**`EditText` minimum line height (API 35)**  
-Single-line `EditText` fields in `AddItemActivity` (barcode, name, quantity, location, notes) may be taller than expected due to locale-aware minimum line height. Confirm fixed-height parent layouts do not clip the cursor or input text.
+**Background activity launch (API 35)**
+`StockCheckReceiver.onReceive()` calls `InventoryRepository.checkLowStock()` which posts a notification. After BLK-03 is fixed, it no longer attempts to launch an activity directly. Verify that tapping the notification from a locked screen or background state still correctly opens `MainActivity` via the direct `PendingIntent`.
 
-**Background activity launch restrictions (API 31+, tightened API 34+, API 35+)**  
-After fixing the notification trampoline (B-04), confirm no other code path attempts to start an activity from a background `Service`, `BroadcastReceiver`, or `WorkManager` task without a full-screen notification intent. `StockCheckReceiver.onReceive()` fires from an alarm — it calls `checkLowStock()` which posts a notification. Verify it does not attempt to start an activity directly; the only UI surface from background context should be the notification itself.
+**TLS endpoint verification**
+The app declares `INTERNET` permission. On API 35, connections to TLS 1.0/1.1 endpoints fail silently. Verify that any backend API or update endpoint this app contacts supports TLS 1.2+. Coordinate with the infrastructure team. No code change in the app is required if the endpoints are already on TLS 1.2+. Validate using a network proxy (Charles, Wireshark) on an API 35 emulator — confirm all connections complete successfully.
 
-**DataWedge scan beep not affected by audio focus restrictions (API 35)**  
-DataWedge's built-in scan confirmation beep is played by the DataWedge service. It is unaffected by the API 35 audio focus restrictions. If a future feature plays a custom sound from `MainActivity` via `MediaPlayer`, that sound must be triggered while the app is in the foreground. No action required now.
+---
 
-**TLS 1.0/1.1 restricted (API 35)**  
-The app declares `INTERNET` permission. Before bumping targetSdk to 35, verify all server endpoints support TLS 1.2 or higher. Coordinate with IT/infrastructure to check any on-premise APIs or legacy corporate servers.
-
-**Private Space (API 35 — enterprise note)**  
-For Zebra managed dedicated-use devices, MDM policy typically disables Private Space. No action required for standard enterprise deployments. If the app could be installed into Private Space, the DataWedge profile association must match the app's package name within that profile context.
+*End of Phase 0 migration plan.*
