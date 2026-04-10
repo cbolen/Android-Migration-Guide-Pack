@@ -4,7 +4,7 @@ Context files and migration prompts to help developers port Android apps to Andr
 
 > **Caution:** This pack uses AI to assist with migration analysis and code changes. AI suggestions can contain errors, miss edge cases, or produce code that compiles but behaves incorrectly. Always review every change before committing, test on real devices at each API level, and consult the official [Android API documentation](https://developer.android.com/about/versions) and [Zebra TechDocs](https://techdocs.zebra.com) when in doubt. This pack is a productivity aid, not a substitute for developer judgment.
 
-> **What this pack can and cannot do:** `scan.sh` and the AI migration prompts reliably cover the well-known, pattern-detectable changes — exported flags, PendingIntent flags, deprecated APIs, permission changes. They will not catch everything. Patterns that span multiple files (e.g. notification trampolines), issues inside third-party libraries, behavioural changes with no code signature (TLS endpoint versions, audio focus, text rendering), and Zebra-specific runtime behaviour (DataWedge profile association, EMDK binding) can only be verified by running on a real device at each API level. The testing checklist in `docs/migration-guide.md` covers what automated scanning cannot reach.
+> **What this pack can and cannot do:** `scan.sh` produces two kinds of findings: `[FOUND]` items are genuine issues requiring a code change; `[VERIFY]` items are patterns that were detected but may already be correctly implemented — confirm each one manually. Neither category catches everything. Patterns that span multiple files (e.g. notification trampolines), issues inside third-party libraries, behavioural changes with no code signature (TLS endpoint versions, audio focus, text rendering), and Zebra-specific runtime behaviour (DataWedge profile association, EMDK binding) can only be verified by running on a real device at each API level. The testing checklist in `docs/migration-guide.md` covers what automated scanning cannot reach.
 
 ## What's Included
 
@@ -71,11 +71,24 @@ Open `docs/system-prompt.md` and paste the full contents as your first message, 
 
 ---
 
-## Step 3 — Run the Migration Prompts
+## Step 3 — Migrate
+
+> **Prerequisite:** If your project is on AGP 4.x or 7.x, complete the toolchain upgrade first (`docs/toolchain-upgrade.md`) before migrating targetSdk.
+
+Choose one approach:
+
+| | When to use |
+|---|---|
+| **Automated** (scan.sh + migrate.sh) | Fastest path. Handles most projects in one pass. |
+| **Manual phases** (prompts below) | When you want to review and understand each change, or when automation misses something. |
+
+**For the automated approach, skip to [Automate the Migration](#automate-the-migration) below.**
+
+---
+
+### Manual Phase-by-Phase Approach
 
 Work through the phases below in order. **Start with Phase 0** — it makes no code changes and produces a prioritized list of everything that needs fixing so you know the full scope before starting.
-
-> **Prerequisite:** If your project is on AGP 4.x or 7.x, complete the toolchain upgrade first (`docs/toolchain-upgrade.md`) before running any targetSdk migration phases.
 
 ### Phase 0 — Discovery: Full Project Audit
 
@@ -241,7 +254,9 @@ Add any missing Jetpack dependencies needed for the changes made in earlier phas
 
 ## Automate the Migration
 
-The recommended flow is three steps: scan, fix, verify.
+> Use this instead of the manual phases above — not in addition to them. If automated fixes miss anything, run the manual phases for those specific items only.
+
+The flow is three steps: scan, fix, verify.
 
 ### Step 1 — Scan (all tools)
 

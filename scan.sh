@@ -25,18 +25,34 @@ LOG="$ROOT/migrate.log"
 : > "$LOG"
 FOUND=0
 FIXED=0
+VERIFY=0
 
-log()   { echo "$*" | tee -a "$LOG"; }
-found() { FOUND=$((FOUND+1)); log "  [FOUND]  $*"; }
-fixed() { FIXED=$((FIXED+1)); log "  [FIXED]  $*"; }
-ok()    { log "  [OK]     $*"; }
+log()    { echo "$*" | tee -a "$LOG"; }
+found()  { FOUND=$((FOUND+1));  log "  [FOUND]  $*"; }
+verify() { VERIFY=$((VERIFY+1)); log "  [VERIFY] $*"; }
+fixed()  { FIXED=$((FIXED+1));  log "  [FIXED]  $*"; }
+ok()     { log "  [OK]     $*"; }
 
+# [FOUND] — genuine issue requiring a fix
 scan_src() {
   local pattern="$1" msg="$2"
   local hits
   hits=$(grep -rn --include='*.java' --include='*.kt' -E "$pattern" "$ROOT/app/src" 2>/dev/null || true)
   if [[ -n "$hits" ]]; then
     found "$msg"
+    echo "$hits" | while IFS= read -r line; do log "             $line"; done
+  else
+    ok "$msg"
+  fi
+}
+
+# [VERIFY] — pattern found, may already be correctly implemented; confirm manually
+scan_src_verify() {
+  local pattern="$1" msg="$2"
+  local hits
+  hits=$(grep -rn --include='*.java' --include='*.kt' -E "$pattern" "$ROOT/app/src" 2>/dev/null || true)
+  if [[ -n "$hits" ]]; then
+    verify "$msg"
     echo "$hits" | while IFS= read -r line; do log "             $line"; done
   else
     ok "$msg"
@@ -50,6 +66,20 @@ scan_manifest() {
   hits=$(grep -n -E "$pattern" "$MANIFEST" 2>/dev/null || true)
   if [[ -n "$hits" ]]; then
     found "$msg"
+    echo "$hits" | while IFS= read -r line; do log "             AndroidManifest.xml:$line"; done
+  else
+    ok "$msg"
+  fi
+}
+
+# [VERIFY] — manifest pattern found, may already be correctly handled; confirm manually
+scan_manifest_verify() {
+  local pattern="$1" msg="$2"
+  [[ ! -f "$MANIFEST" ]] && { log "  [SKIP]   $msg (manifest not found)"; return; }
+  local hits
+  hits=$(grep -n -E "$pattern" "$MANIFEST" 2>/dev/null || true)
+  if [[ -n "$hits" ]]; then
+    verify "$msg"
     echo "$hits" | while IFS= read -r line; do log "             AndroidManifest.xml:$line"; done
   else
     ok "$msg"
@@ -164,56 +194,56 @@ mfix_src 'Handler()' 'Handler()' 'Handler(android.os.Looper.getMainLooper())' \
 # ── API 31 (Android 12) ───────────────────────────────────────────────────────
 log ""
 log "=== API 31 (Android 12) ==="
-scan_manifest 'intent-filter' \
-  "Components with intent-filter — verify android:exported is set on each (install failure if missing)"
-scan_src 'PendingIntent\.(getActivity|getBroadcast|getService|getForegroundService)' \
-  "PendingIntent calls — verify FLAG_IMMUTABLE or FLAG_MUTABLE on every call (runtime crash)"
+scan_manifest_verify 'intent-filter' \
+  "Components with intent-filter — confirm android:exported is set on each (install failure if missing)"
+scan_src_verify 'PendingIntent\.(getActivity|getBroadcast|getService|getForegroundService)' \
+  "PendingIntent calls — confirm FLAG_IMMUTABLE or FLAG_MUTABLE on every call (runtime crash if missing)"
 scan_src 'Cipher\.getInstance.*"BC"' \
   "BouncyCastle provider — removed API 31, use default provider"
-scan_src 'setExactAndAllowWhileIdle|setAlarmClock|\.setExact\(' \
-  "Exact alarm — requires SCHEDULE_EXACT_ALARM permission + canScheduleExactAlarms() guard"
-scan_manifest 'SCHEDULE_EXACT_ALARM|USE_EXACT_ALARM' \
-  "Exact alarm permission declared in manifest"
+scan_src_verify 'setExactAndAllowWhileIdle|setAlarmClock|\.setExact\(' \
+  "Exact alarm — confirm SCHEDULE_EXACT_ALARM permission + canScheduleExactAlarms() guard is present"
+scan_manifest_verify 'SCHEDULE_EXACT_ALARM|USE_EXACT_ALARM' \
+  "Exact alarm permission declared in manifest — confirm canScheduleExactAlarms() guard is in code"
 scan_src 'ACTION_CLOSE_SYSTEM_DIALOGS' \
   "ACTION_CLOSE_SYSTEM_DIALOGS — throws SecurityException on API 31+"
 scan_src 'MediaRecorder\(\)' \
   "MediaRecorder() no-arg constructor — removed API 31, use MediaRecorder(context)"
-scan_src 'GCMParameterSpec|AES/GCM' \
-  "AES/GCM cipher — verify exactly 12-byte IV (any other length throws on API 31)"
+scan_src_verify 'GCMParameterSpec|AES/GCM' \
+  "AES/GCM cipher — confirm exactly 12-byte IV is used (any other length throws on API 31)"
 
 # ── API 33 (Android 13) ───────────────────────────────────────────────────────
 log ""
 log "=== API 33 (Android 13) ==="
 scan_src 'AsyncTask' \
   "AsyncTask — removed API 33, replace with coroutines or WorkManager"
-scan_src 'registerReceiver\(' \
-  "registerReceiver() — must pass RECEIVER_NOT_EXPORTED or RECEIVER_EXPORTED on API 33+"
+scan_src_verify 'registerReceiver\(' \
+  "registerReceiver() — confirm RECEIVER_NOT_EXPORTED or RECEIVER_EXPORTED flag is passed on API 33+"
 scan_src 'BluetoothAdapter.*\.enable\(\)|BluetoothAdapter.*\.disable\(\)' \
   "BluetoothAdapter.enable/disable() — always returns false on API 33+, use ACTION_REQUEST_ENABLE"
 scan_src 'getParcelableExtra\("[^"]*"\)' \
   "getParcelableExtra(key) untyped — use getParcelableExtra(key, Class) on API 33+"
 scan_src 'getSerializableExtra\("[^"]*"\)' \
   "getSerializableExtra(key) untyped — use getSerializableExtra(key, Class) on API 33+"
-scan_manifest 'POST_NOTIFICATIONS' \
-  "POST_NOTIFICATIONS permission in manifest (required API 33+)"
-scan_manifest 'READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE' \
-  "Legacy storage permissions — replace with READ_MEDIA_IMAGES/VIDEO/AUDIO on API 33+"
+scan_manifest_verify 'POST_NOTIFICATIONS' \
+  "POST_NOTIFICATIONS in manifest — confirm runtime permission request is present in code"
+scan_manifest_verify 'READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE' \
+  "Legacy storage permissions — confirm guarded with maxSdkVersion or replaced with READ_MEDIA_* on API 33+"
 
 # ── API 34 (Android 14) ───────────────────────────────────────────────────────
 log ""
 log "=== API 34 (Android 14) ==="
-scan_manifest '<service' \
-  "Service declarations — verify foregroundServiceType is set on each (runtime crash if missing)"
-scan_manifest 'foregroundServiceType' \
-  "foregroundServiceType declared (cross-check with service count above)"
-scan_src 'canScheduleExactAlarms' \
-  "canScheduleExactAlarms() — verify check is also in onResume (auto-revoked on app update)"
-scan_src 'DexClassLoader|PathClassLoader|InMemoryDexClassLoader' \
-  "Dynamic DEX loading — file must be setReadOnly() before loading on API 34+"
-scan_src 'ZipFile|ZipInputStream' \
-  "ZipFile/ZipInputStream — validate entry names against path traversal on API 34+"
-scan_manifest 'USE_FULL_SCREEN_INTENT' \
-  "USE_FULL_SCREEN_INTENT — auto-revoked for non-alarm/calling apps on API 34+"
+scan_manifest_verify '<service' \
+  "Service declarations — confirm foregroundServiceType is set on each (runtime crash if missing)"
+scan_manifest_verify 'foregroundServiceType' \
+  "foregroundServiceType declared — confirm count matches service declarations above"
+scan_src_verify 'canScheduleExactAlarms' \
+  "canScheduleExactAlarms() — confirm check is also present in onResume (auto-revoked on app update)"
+scan_src_verify 'DexClassLoader|PathClassLoader|InMemoryDexClassLoader' \
+  "Dynamic DEX loading — confirm file.setReadOnly() is called before loading on API 34+"
+scan_src_verify 'ZipFile|ZipInputStream' \
+  "ZipFile/ZipInputStream — confirm entry names are validated against path traversal on API 34+"
+scan_manifest_verify 'USE_FULL_SCREEN_INTENT' \
+  "USE_FULL_SCREEN_INTENT — confirm canUseFullScreenIntent() check with IMPORTANCE_HIGH fallback"
 
 # ── API 35 (Android 15) ───────────────────────────────────────────────────────
 log ""
@@ -222,8 +252,8 @@ scan_src 'override fun onBackPressed|public void onBackPressed' \
   "onBackPressed() override — replace with OnBackPressedCallback (predictive back enforced)"
 scan_src 'startActivityForResult|onActivityResult|onRequestPermissionsResult' \
   "Deprecated result APIs — replace with ActivityResultContracts"
-scan_src 'WindowInsetsCompat|setOnApplyWindowInsetsListener' \
-  "Edge-to-edge inset handling — verify all activities covered (enforced API 35)"
+scan_src_verify 'WindowInsetsCompat|setOnApplyWindowInsetsListener' \
+  "Edge-to-edge inset handling present — confirm all activities are covered (enforced API 35)"
 scan_src 'screenWidthDp|screenHeightDp' \
   "Configuration.screenWidthDp/heightDp — now includes system bars, use WindowMetrics"
 scan_src 'TLSv1[^2]|SSLv3' \
@@ -236,18 +266,18 @@ scan_src '/sdcard/|/storage/emulated/0/' \
   "Hardcoded storage paths — use getExternalFilesDir() or MediaStore"
 scan_src 'getExternalStorageDirectory|getExternalStoragePublicDirectory' \
   "Legacy external storage APIs — use getExternalFilesDir() or MediaStore"
-scan_manifest 'MANAGE_EXTERNAL_STORAGE' \
-  "MANAGE_EXTERNAL_STORAGE — evaluate if scoped storage can replace"
+scan_manifest_verify 'MANAGE_EXTERNAL_STORAGE' \
+  "MANAGE_EXTERNAL_STORAGE — evaluate whether scoped storage APIs can replace this"
 
 # ── Zebra-specific ────────────────────────────────────────────────────────────
 log ""
 log "=== ZEBRA-SPECIFIC ==="
-scan_src 'com\.symbol\.datawedge|DataWedge|datawedge' \
-  "DataWedge usage — verify receiver uses RECEIVER_NOT_EXPORTED on API 33+"
-scan_src 'RECEIVER_NOT_EXPORTED|RECEIVER_EXPORTED' \
-  "DataWedge receiver export flag present"
-scan_src 'EMDKManager|EMDKResults|emdkManager' \
-  "EMDK usage — verify EMDKManager released in onPause/onDestroy"
+scan_src_verify 'com\.symbol\.datawedge|DataWedge|datawedge' \
+  "DataWedge usage — confirm receiver is registered with RECEIVER_NOT_EXPORTED on API 33+"
+scan_src_verify 'RECEIVER_NOT_EXPORTED|RECEIVER_EXPORTED' \
+  "DataWedge receiver export flag present — confirm applied to all DataWedge registerReceiver() calls"
+scan_src_verify 'EMDKManager|EMDKResults|emdkManager' \
+  "EMDK usage — confirm EMDKManager.release() is called in onPause/onDestroy"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 log ""
@@ -255,11 +285,17 @@ log "============================================="
 if $FIX; then
 log "SCAN + FIX COMPLETE"
 log "  Mechanical fixes applied : $FIXED"
-log "  Items still needing AI   : $FOUND"
+log "  [FOUND]  — genuine issues needing a fix : $FOUND"
+log "  [VERIFY] — confirmed by scan, check manually: $VERIFY"
 else
 log "SCAN COMPLETE"
-log "  Items needing attention  : $FOUND"
+log "  [FOUND]  — genuine issues needing a fix : $FOUND"
+log "  [VERIFY] — confirmed by scan, check manually: $VERIFY"
 fi
+log ""
+log "  [FOUND]  items need code changes — run migrate.sh or fix manually."
+log "  [VERIFY] items are pattern-detected and may already be correct;"
+log "           review each one against the running app on a real device."
 log "============================================="
 log ""
 log "Next steps:"
@@ -278,9 +314,9 @@ log "    Paste migrate.log and docs/migration-guide.md into your chat, then:"
 log '    "Read migrate.log for items needing fixes. Read migration-guide.md'
 log '     for guidance. Apply fixes for every [FOUND] item, one at a time."'
 else
-log "  No items found — migration looks complete."
-log "  Run on a real device at each API level to verify behavioural changes."
+log "  No [FOUND] items — migration looks complete."
+log "  Review any [VERIFY] items above and test on a real device at each API level."
 fi
 
 echo ""
-echo "Scan complete. $FIXED fixed, $FOUND remaining. See migrate.log for details."
+echo "Scan complete. $FIXED fixed, $FOUND [FOUND], $VERIFY [VERIFY]. See migrate.log for details."
