@@ -1,0 +1,29 @@
+# machan project principles — super rules for all development
+# These are loaded by machan and injected into agent context at every stage.
+
+[principles.ZERO_DEPS]
+description = "Zero installation dependencies for customers beyond what Android developers already have. The scanner must work with bash and standard Unix tools (grep, sed, awk, find) — available natively on macOS/Linux and via Git Bash on Windows (bundled with Git for Windows, which Android developers universally have). No Python, Node, pip, npm, or additional package managers required."
+type = "judgment"
+review_question = "Does this change introduce any dependency that a customer would need to install beyond Git (which provides Git Bash on Windows)? Customers must go from 'I found this tool' to 'I have scan results' with no setup beyond cloning the repo."
+
+[principles.THREE_MODES]
+description = "Every piece of content must work in at least one of three consumption modes: (1) Tech Doc — readable as markdown on GitHub, (2) Standalone Tool — runnable via bash with a target path argument, (3) LLM Input — paste-friendly for any LLM. No mode may require tool-specific setup."
+type = "judgment"
+review_question = "Can this content be consumed by a customer in at least one of: reading on GitHub, running via bash, or pasting into an LLM — without tool-specific prerequisites?"
+
+[principles.CUSTOMER_FIRST]
+description = "When a design choice benefits internal maintainability but adds friction for customers, choose the customer-friendly option. Internal complexity is acceptable; customer complexity is not."
+type = "judgment"
+review_question = "Does this change optimize for the customer's experience, or only for the maintainer's convenience? If there is a trade-off, does it favor the customer?"
+
+[principles.CROSS_PLATFORM]
+description = "The tool must be consumable by customers on Windows, Linux, and macOS. Docs and LLM context (markdown) are inherently cross-platform. The scanner must work on all three platforms — on macOS/Linux natively, on Windows via Git Bash (bundled with Git for Windows). Scripts must avoid Linux-only flags (e.g., grep -P, sed -i without backup suffix, readlink -f) and use POSIX-compatible constructs where possible."
+type = "judgment"
+review_question = "Does this change work on all three platforms? Are there any Linux-only flags, symlink behaviors, or path assumptions (forward vs back slash) that would break on Windows Git Bash or macOS?"
+
+[principles.NO_HARDCODED_PATHS]
+description = "scan.sh must never require customers to copy files into their project. The scanner must accept a target path argument and resolve all references relative to its own installation directory."
+type = "mechanical"
+patterns = ["cp.*CLAUDE\\.md", "cp.*migration-guide"]
+severity = "error"
+file_globs = ["*.md", "*.sh"]

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 # migrate.sh — AI-assisted Android migration (Claude Code)
 # Run scan.sh --fix first to generate migrate.log before running this script.
@@ -16,6 +16,14 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 if [[ ! -f "$ROOT/migrate.log" ]]; then
   echo "ERROR: migrate.log not found. Run scan.sh --fix first."
+  exit 1
+fi
+
+if ! command -v claude >/dev/null 2>&1; then
+  echo "ERROR: claude CLI not found. Install from https://claude.ai/download"
+  echo ""
+  echo "Alternatively, paste migrate.log and docs/migration-guide.md into"
+  echo "ChatGPT, Gemini, or Claude.ai and ask the AI to apply fixes."
   exit 1
 fi
 

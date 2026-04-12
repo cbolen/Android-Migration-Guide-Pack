@@ -1,0 +1,10 @@
+# Traceability matrix - managed by machan
+
+[mappings."scan.sh"]
+implements = ["SCAN-004"]
+
+[mappings."migrate.sh"]
+implements = ["SCAN-004"]
+
+[mappings.".gitattributes"]
+implements = ["SCAN-004"]

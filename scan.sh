@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 # scan.sh — Android migration pattern scanner
 #
@@ -33,11 +33,24 @@ verify() { VERIFY=$((VERIFY+1)); log "  [VERIFY] $*"; }
 fixed()  { FIXED=$((FIXED+1));  log "  [FIXED]  $*"; }
 ok()     { log "  [OK]     $*"; }
 
+# Portable source-file grep (macOS BSD grep lacks --include)
+_grep_src() {
+  local flags="$1"; shift
+  find "$ROOT/app/src" \( -name '*.java' -o -name '*.kt' \) -type f \
+    -exec grep $flags "$@" {} + 2>/dev/null || true
+}
+
+# Portable in-place sed (macOS BSD sed -i syntax differs from GNU)
+_sed_i() {
+  local expr="$1" file="$2"
+  sed "$expr" "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+}
+
 # [FOUND] — genuine issue requiring a fix
 scan_src() {
   local pattern="$1" msg="$2"
   local hits
-  hits=$(grep -rn --include='*.java' --include='*.kt' -E "$pattern" "$ROOT/app/src" 2>/dev/null || true)
+  hits=$(_grep_src "-nE" "$pattern")
   if [[ -n "$hits" ]]; then
     found "$msg"
     echo "$hits" | while IFS= read -r line; do log "             $line"; done
@@ -50,7 +63,7 @@ scan_src() {
 scan_src_verify() {
   local pattern="$1" msg="$2"
   local hits
-  hits=$(grep -rn --include='*.java' --include='*.kt' -E "$pattern" "$ROOT/app/src" 2>/dev/null || true)
+  hits=$(_grep_src "-nE" "$pattern")
   if [[ -n "$hits" ]]; then
     verify "$msg"
     echo "$hits" | while IFS= read -r line; do log "             $line"; done
@@ -92,7 +105,7 @@ mfix() {
   [[ ! -f "$file" ]] && return
   if grep -qF "$old" "$file" 2>/dev/null; then
     if $FIX; then
-      sed -i "s|$(echo "$old" | sed 's/[&/\]/\\&/g')|$(echo "$new" | sed 's/[&/\]/\\&/g')|g" "$file"
+      _sed_i "s|$(printf '%s' "$old" | sed 's/[&/\\]/\\&/g')|$(printf '%s' "$new" | sed 's/[&/\\]/\\&/g')|g" "$file"
       fixed "$desc"
     else
       found "$desc (--fix will apply this automatically)"
@@ -106,11 +119,11 @@ mfix() {
 mfix_src() {
   local pattern="$1" old="$2" new="$3" desc="$4"
   local files
-  files=$(grep -rln --include='*.java' --include='*.kt' -F "$old" "$ROOT/app/src" 2>/dev/null || true)
+  files=$(_grep_src "-lF" "$old")
   if [[ -n "$files" ]]; then
     if $FIX; then
       echo "$files" | while IFS= read -r f; do
-        sed -i "s|$(echo "$old" | sed 's/[&/\]/\\&/g')|$(echo "$new" | sed 's/[&/\]/\\&/g')|g" "$f"
+        _sed_i "s|$(printf '%s' "$old" | sed 's/[&/\\]/\\&/g')|$(printf '%s' "$new" | sed 's/[&/\\]/\\&/g')|g" "$f"
       done
       fixed "$desc"
     else
@@ -125,7 +138,7 @@ mfix_src() {
 # ── Auto-detect project layout ────────────────────────────────────────────────
 APP_BUILD=$(find "$ROOT" -maxdepth 2 -name "build.gradle" -path "*/app/*" | head -1)
 MANIFEST=$(find "$ROOT" -path "*/src/main/AndroidManifest.xml" | head -1)
-SETTINGS=$(find "$ROOT" -maxdepth 1 -name "settings.gradle" -o -name "settings.gradle.kts" | head -1)
+SETTINGS=$(find "$ROOT" -maxdepth 1 \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -1)
 WRAPPER="$ROOT/gradle/wrapper/gradle-wrapper.properties"
 
 [[ -z "$APP_BUILD" ]] && { echo "ERROR: app/build.gradle not found"; exit 1; }
@@ -138,7 +151,7 @@ log "scan.sh — Android migration scanner"
 log "Mode      : $( $FIX && echo 'SCAN + FIX mechanical' || echo 'SCAN ONLY' )"
 log "Project   : $ROOT"
 log "targetSdk : ${CURRENT_TARGET:-unknown}"
-log "Scan date : $(date)"
+log "Scan date : $(date '+%Y-%m-%d %H:%M:%S')"
 log "============================================="
 log ""
 
@@ -164,7 +177,7 @@ done
 # Remove jcenter()
 if [[ -n "$SETTINGS" ]] && grep -q 'jcenter()' "$SETTINGS" 2>/dev/null; then
   if $FIX; then
-    sed -i '/jcenter()/d' "$SETTINGS"
+    _sed_i '/jcenter()/d' "$SETTINGS"
     fixed "Removed jcenter() from $(basename "$SETTINGS")"
   else
     found "jcenter() present — deprecated, remove from $(basename "$SETTINGS") (--fix will remove automatically)"
@@ -176,7 +189,7 @@ fi
 # Gradle wrapper → 8.x
 if [[ -f "$WRAPPER" ]] && grep -qE 'gradle-[67]\.' "$WRAPPER" 2>/dev/null; then
   if $FIX; then
-    sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.9-bin.zip|' "$WRAPPER"
+    _sed_i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.9-bin.zip|' "$WRAPPER"
     fixed "Gradle wrapper → 8.9"
   else
     found "Gradle wrapper is pre-8.x — upgrade to 8.x+ for AGP 8 / targetSdk 35 (--fix will update automatically)"
@@ -202,22 +215,22 @@ scan_src 'Cipher\.getInstance.*"BC"' \
   "BouncyCastle provider — removed API 31, use default provider"
 
 # Notification trampoline: BroadcastReceiver subclass that calls startActivity()
-_receiver_files=$(grep -rln --include='*.java' --include='*.kt' -E ':\s*BroadcastReceiver|extends BroadcastReceiver' "$ROOT/app/src" 2>/dev/null || true)
+_receiver_files=$(_grep_src "-lE" ':\s*BroadcastReceiver|extends BroadcastReceiver')
 _trampoline_files=""
 if [[ -n "$_receiver_files" ]]; then
   while IFS= read -r _f; do
-    grep -qE 'startActivity\(' "$_f" 2>/dev/null && _trampoline_files="${_trampoline_files}${_f}\n"
+    grep -qE 'startActivity\(' "$_f" 2>/dev/null && _trampoline_files="${_trampoline_files}${_f}"$'\n'
   done <<< "$_receiver_files"
 fi
 if [[ -n "$_trampoline_files" ]]; then
   found "Notification trampoline — BroadcastReceiver calls startActivity() (blocked API 31+; attach PendingIntent directly to notification)"
-  printf '%b' "$_trampoline_files" | while IFS= read -r _f; do [[ -n "$_f" ]] && log "             $_f"; done
+  echo "$_trampoline_files" | while IFS= read -r _f; do [[ -n "$_f" ]] && log "             $_f"; done
 else
   ok "Notification trampoline — no BroadcastReceiver calls startActivity()"
 fi
 
 # Exact alarm: [FOUND] if code uses it but permission is missing; [VERIFY] if permission is present
-_exact_hits=$(grep -rn --include='*.java' --include='*.kt' -E 'setExactAndAllowWhileIdle|setAlarmClock|\.setExact\(' "$ROOT/app/src" 2>/dev/null || true)
+_exact_hits=$(_grep_src "-nE" 'setExactAndAllowWhileIdle|setAlarmClock|\.setExact\(')
 if [[ -n "$_exact_hits" ]]; then
   if [[ -f "$MANIFEST" ]] && ! grep -qE 'SCHEDULE_EXACT_ALARM|USE_EXACT_ALARM' "$MANIFEST" 2>/dev/null; then
     found "Exact alarm used but SCHEDULE_EXACT_ALARM missing from manifest (SecurityException on API 31+)"
@@ -238,7 +251,7 @@ scan_manifest 'android\.permission\.BLUETOOTH"|android\.permission\.BLUETOOTH_AD
 
 # Custom splash screen: activity with postDelayed/Thread.sleep + startActivity + finish() = timed splash pattern
 # API 31+ enforces system splash screen before app launches; custom splash causes double-splash
-_splash_files=$(grep -rln --include='*.kt' --include='*.java' -E 'postDelayed|Thread\.sleep' "$ROOT/app/src" 2>/dev/null || true)
+_splash_files=$(_grep_src "-lE" 'postDelayed|Thread\.sleep')
 _splash=""
 if [[ -n "$_splash_files" ]]; then
   while IFS= read -r _f; do
@@ -271,7 +284,7 @@ scan_src 'getParcelableExtra\("[^"]*"\)' \
 scan_src 'getSerializableExtra\("[^"]*"\)' \
   "getSerializableExtra(key) untyped — use getSerializableExtra(key, Class) on API 33+"
 # POST_NOTIFICATIONS: [FOUND] if NotificationManager is used but permission is missing
-_notify_files=$(grep -rln --include='*.java' --include='*.kt' -E 'NotificationManager' "$ROOT/app/src" 2>/dev/null || true)
+_notify_files=$(_grep_src "-lE" 'NotificationManager')
 if [[ -n "$_notify_files" ]]; then
   if [[ -f "$MANIFEST" ]] && ! grep -qE 'POST_NOTIFICATIONS' "$MANIFEST" 2>/dev/null; then
     found "Notifications used but POST_NOTIFICATIONS missing from manifest (silently dropped on API 33+)"
@@ -292,7 +305,7 @@ scan_manifest 'android:sharedUserId' \
 log ""
 log "=== API 34 (Android 14) ==="
 # foregroundServiceType: [FOUND] if startForeground() used but type absent from manifest (runtime crash API 34+)
-_fg_hits=$(grep -rn --include='*.kt' --include='*.java' -E 'startForeground\(' "$ROOT/app/src" 2>/dev/null || true)
+_fg_hits=$(_grep_src "-nE" 'startForeground\(')
 if [[ -n "$_fg_hits" ]]; then
   if [[ -f "$MANIFEST" ]] && ! grep -qE 'foregroundServiceType' "$MANIFEST" 2>/dev/null; then
     found "startForeground() used but foregroundServiceType missing from manifest (runtime crash on API 34+)"
@@ -341,11 +354,11 @@ scan_manifest_verify 'MANAGE_EXTERNAL_STORAGE' \
 log ""
 log "=== ZEBRA-SPECIFIC ==="
 # DataWedge RECEIVER_NOT_EXPORTED: [FOUND] if DataWedge used with registerReceiver but flag absent
-_dw_files=$(grep -rln --include='*.kt' --include='*.java' -E 'com\.symbol\.datawedge|DataWedge' "$ROOT/app/src" 2>/dev/null || true)
-_dw_reg=$(grep -rln --include='*.kt' --include='*.java' -E 'registerReceiver' "$ROOT/app/src" 2>/dev/null || true)
+_dw_files=$(_grep_src "-lE" 'com\.symbol\.datawedge|DataWedge')
+_dw_reg=$(_grep_src "-lE" 'registerReceiver')
 if [[ -n "$_dw_files" ]] && [[ -n "$_dw_reg" ]]; then
   # Exclude comment-only lines so a TODO comment doesn't mask a missing flag
-  _dw_flag=$(grep -rn --include='*.kt' --include='*.java' -E 'RECEIVER_NOT_EXPORTED|RECEIVER_EXPORTED' "$ROOT/app/src" 2>/dev/null | grep -vE ':\s*//' || true)
+  _dw_flag=$(_grep_src "-nE" 'RECEIVER_NOT_EXPORTED|RECEIVER_EXPORTED' | grep -vE ':\s*//' || true)
   if [[ -z "$_dw_flag" ]]; then
     found "DataWedge registerReceiver() missing RECEIVER_NOT_EXPORTED flag (SecurityException on API 33+)"
     echo "$_dw_reg" | while IFS= read -r _f; do log "             $_f"; done
